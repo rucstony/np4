@@ -1,68 +1,109 @@
+#include  "unp.h"
+#include <netinet/ip.h>
+
+#define MAX_PAYLOAD_SIZE 1500
 #define IPPROTO_USID    537    
+#define HOSTNAME_LEN 255
+
+struct hwaddr 
+{
+    int             sll_ifindex;     /* Interface number */
+    unsigned short  sll_hatype;  /* Hardware type */
+    unsigned char   sll_halen;       /* Length of address */
+    unsigned char   sll_addr[8];     /* Physical layer address */
+};
+
 /*
-For this assignment you will be developing an application that uses raw IP sockets to ‘walk’ around an ordered list of nodes (given as a command line argument at the ‘source’ node, which is the node at which the tour was initiated), in a manner similar to the IP SSRR (Strict Source and Record Route) option. At each node, the application pings the preceding node in the tour. However, unlike the ping code in Stevens, you will be sending the ping ICMP echo request messages through a SOCK_RAW-type PF_PACKET socket and implementing ARP functionality to find the Ethernet address of the target node. Finally, when the ‘walk’ is completed, the group of nodes visited on the tour will exchange multicast messages. Your code will consist of two process modules, a ‘Tour’ application module (which will implement all the functionality outlined above, except for ARP activity) and an ARP module.
-
-The following should prove to be useful reference material for the assignment:
-
-    Sections 21.2, 21.3, 21.6 and 21.10, Chapter 21, on Multicasting.
-
-    Sections 27.1 to 27.3, Chapter 27, on the IP SSRR option.
-
-    Sections 28.1 to 28.5, Chapter 28, on raw sockets, the IP_HDRINCL socket option, and ping.
-
-    Sections 15.5, Chapter 15, on Unix domain SOCK_STREAM sockets.
-
-    Figure 29.14,  p. 807, and the corresponding explanation on  p. 806, on filling in an IP header when the IP_HDRINCL socket option is in effect.
-
-    The Lecture Slides on  ARP & RARP  (especially Section 4.4, ARP Packet Format, and the Figure 4.3 it includes).
-
-The  VMware  environment
-
-You will be using the same vm1 , . . . . . , vm10 nodes you used for Assignment 3. However, unlike Assignment 3, you should use only interfaces eth0 and their associated IP addresses and ignore the other Ethernet interfaces that nodes have (interfaces eth0 make vm1 , . . . . . , vm10 look as if they belong to the same Ethernet LAN 192.168.1.0/24). Note that, apart from the primary IP addresses associated with interfaces eth0, some nodes might also have one or more alias IP addresses associated with their interface eth0.
+  Retrieve the destination canonical IP address in presentation format. 
 */
+int retrieveDestinationCanonicalIpPresentationFormat(const char *server_vm, char *destination_canonical_ip_presentation_format)
+{
+  struct hostent *hptr;
+  char *ptr, **pptr;
+  if((hptr=gethostbyname(server_vm))==NULL)
+  {
+    err_msg("gethostbyname error for host: %s : %s",server_vm,hstrerror(h_errno));
+    return -1;
+  }
+  if(hptr->h_addrtype==NULL)
+  {
+    fprintf(stderr,"Invalid IP address\n");
+    return -1;
+  }
+  printf("Address type: ....%ld\n",hptr->h_addrtype);
+
+  switch(hptr->h_addrtype)
+  {
+    case AF_INET:
+    //printf("AF_INET type");
+
+    pptr=hptr->h_addr_list;
+    if(pptr!=NULL)
+    {
+      inet_ntop(hptr->h_addrtype,*pptr,destination_canonical_ip_presentation_format,100);
+      printf("Destination canonical IP in presentation format: %s\n", destination_canonical_ip_presentation_format);
+      return 1;
+    }
+    break;
+
+    default:
+    fprintf(stderr,"unknown address type\n");
+    return -1;
+    break;
+  }
+}
+
+/*
+    Stores the IP addresses of the vm-tour in a comma-separated string to be passed as payload to the tour-members.
+*/
+int createIPTourString( char * IPaddress_list, char *argv[] )
+{
+    int i;
+    char IPaddress[INET_ADDRSTRLEN], own_vm_name[HOSTNAME_LEN];
+    
+    /* Return the current node's eth0 interface's IP address. */
+    gethostname( own_vm_name, sizeof(own_vm_name) );
+    retrieveDestinationCanonicalIpPresentationFormat(own_vm_name, IPaddress_list);      
+
+    if( strcmp(argv[1], own_vm_name) == 0 )
+    {
+        return -1;
+    }    
+        
+    for( i=1; argv[i] != NULL; i++ )
+    {
+        /* Subsequent nodes should not be same. */
+        if( strcmp(argv[i], argv[i-1]) == 0 )
+        {
+            return -1;
+        }     
+        retrieveDestinationCanonicalIpPresentationFormat( argv[i], IPaddress );
+        strcat(IPaddress_list, "|");
+        strcat(IPaddress_list, IPaddress);
+    }   
+    return 1;
+}
+
+struct ip * createIPPacket()
+{
+
+}
+
 int main(int argc, char const *argv[])
 {
-    int         packet_socket, rt_sock, pg_sock;
+    int         packet_socket, rt_sock, pg_sock, iptour_return;
     const int   on = 1;
+    char IPaddress_list[MAX_PAYLOAD_SIZE], IPmulticast_address[INET_ADDRSTRLEN] = "239.108.175.37";
+    int port_number = 17537;
 
+    if( createIPTourString(IPaddress_list, argv, IPmulticast_address, port_number) == -1 )
+    {
+        printf("Error : Same node should not appear consequentively in the tour list..Exiting..\n");
+        exit(1);
+    }    
+    else
+        printf("\nIP Tour List : %s\n",IPaddress_list);
 
-
-    struct hwa_info *hwa, *hwahead;
-    struct sockaddr *sa;
-    char   *ptr;
-    int    i, j, prflag,broadcast_id=0,n,s,len,clilen,pathlen,prolen;
-    struct odr_frame * route_exists;
-    int packet_socket;
-    int nready , odrlen;
-    struct sockaddr_un procaddr;
-    int                 sockfd;
-    struct sockaddr_un  cliaddr, servaddr;
-    struct sockaddr_ll  odraddr;  
-        struct sockaddr_in addr2;
-    char data_stream[MAXLINE];
-    char *msg_fields[MAXLINE];
-    char str_from_sock[MAXLINE], source_addr[INET_ADDRSTRLEN];
-    char*    destination_canonical_ip_presentation_format;
-    char * source_mac;
-    int  destination_port_number;
-    char*    message_to_be_sent;
-    int  route_rediscovery_flag;
-    struct odr_frame RREQ,RREP;
-    struct routing_entry existing_entry, *re;
-    struct odr_frame req_type;
-    struct odr_frame * recvd_packet;
-    struct port_sunpath_mapping_entry *node;
-    struct msg_store * msg_store_entry;
-    char own_canonical_ip_address[INET_ADDRSTRLEN];
-
-    int maxfdp1;
-    fd_set rset;
-    void* buffer = (void*)malloc(ETH_FRAME_LEN); /*Buffer for ethernet frame*/
-    int length = 0; /*length of the received frame*/ 
-    int notifyOthers;
-    
-    char next_hop_node_ethernet_address[6];
-    int ihw,khw=0;
 
     if((packet_socket = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_IP) ) )==-1)
     {
@@ -243,14 +284,6 @@ API specifications
     hwaddr is a new structure (and not a pre-existing type) modeled on the sockaddr_ll of PF_PACKET; you will have to declare it in your code. It is used to return the requested hardware address to the caller of areq :
 
 */
-
-    struct hwaddr 
-    {
-        int             sll_ifindex;	 /* Interface number */
-        unsigned short  sll_hatype;	 /* Hardware type */
-        unsigned char   sll_halen;		 /* Length of address */
-        unsigned char   sll_addr[8];	 /* Physical layer address */
-    };
 
 /*
     areq creates a Unix domain socket of type SOCK_STREAM and connects to the ‘well-known’ sun_path file of the ARP listening socket. It sends the IP address from parameter IPaddr and the information in the three fields of parameter HWaddr to ARP. It then blocks on a read awaiting a reply from ARP. This read should be backed up by a timeout since it is possible that no reply is received for the request. If a timeout occurs, areq should close the socket and return to its caller indicating failure (through its int return value).

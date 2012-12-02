@@ -31,7 +31,7 @@ struct IP_hw_address_mpg
 	int sll_ifindex;
 	unsigned short sll_hatype;
 	int unix_domain_confd;
-};
+}*rt_head, *rt_tmp;
 
 
 void sendARPframe( int s , struct arp_frame * populated_arp_frame , char * source_hw_mac_address, char * destination_hw_mac_address , int if_index )
@@ -181,6 +181,89 @@ struct arp_frame * convertToHostByteOrder(struct arp_frame * recieved_arp_frame)
 	recieved_arp_frame->op=htons(recieved_arp_frame->op);
 	return recieved_arp_frame;
 }
+
+void insert_to_cache( char * ip_address, int if_index, char * hatype, int connfd )
+{
+
+    struct IP_hw_address_mpg *node = (struct IP_hw_address_mpg *)malloc( sizeof(struct IP_hw_address_mpg) );
+	
+    strcpy( node->ip_address, ip_address );
+    memcpy( node->next_hop_node_ethernet_address, next_hop_node_ethernet_address, 6 );
+    node->if_index =  outgoing_interface_index ;
+    
+    node->number_of_hops_to_destination = number_of_hops_to_destination;
+	node->made_or_last_reconfirmed_or_updated_timestamp = curr_time_ms;
+   
+    if( rt_head == NULL )
+    {
+      rt_head = node;
+      rt_head->next = NULL;			
+    } 
+    else if( rt_head->next == NULL )
+    {
+      rt_head->next = node;
+      node->next = NULL;			
+    } 
+    else
+    {
+      rt_tmp = rt_head->next;       
+      rt_head->next = node;
+      node->next = rt_tmp;            
+    } 
+ 	return;
+ }
+
+/*
+	Routing table lookup.
+*/
+struct IP_hw_address_mpg * get_ethernet_from_ip( char * ip_address, char * if_index, char * hatype, int connfd )
+{
+	struct IP_hw_address_mpg *node; 
+	char * h_name;	
+
+	node = rt_head;
+	while( node != NULL )
+	{
+		if( strcmp( node->ip_address, ip_address ) == 0 && (node->sll_ifindex== if_index ))
+		{
+			//retrieveHostName( node->destination_canonical_ip_address , h_name);
+
+			return node;
+		}	
+		
+		node = node->next;
+	}
+	return "-1";	
+}
+
+/*
+	Deletes an entry from the routing table entry. 
+*/
+int cache_delete_entry( char * destination_canonical_ip_address )
+{
+	struct routing_entry *node; 	
+	struct routing_entry *prev; 	
+
+	printf("Deleting routing table entry for : %s\n", destination_canonical_ip_address );
+
+	node = rt_head; 
+	while( node != NULL )	
+	{
+		if( strcmp( node->destination_canonical_ip_address, destination_canonical_ip_address ) == 0 )
+		{
+			//delete logic goes here.
+			prev->next = node->next;
+			node->next = NULL;
+			free(node);	
+		}	
+		prev = node;
+		node = node->next;
+	}	
+	return -1;
+}
+
+
+
 
 int main(int argc, char const *argv[])
 {

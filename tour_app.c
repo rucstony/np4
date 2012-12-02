@@ -48,6 +48,7 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
                                           HWaddr.sll_halen);
 //    printf("%s\n", output_to_sock);
     printf("\nMessage sent to ARP unix domain socket..%s\n",output_to_sock );
+    
     send_result = sendto(unix_domain_socket,output_to_sock,strlen(output_to_sock),0,&unixaddr,sizeof(unixaddr));
     if (send_result == -1){ perror("sendto"); exit(0); }
     

@@ -187,10 +187,10 @@ int main(int argc, char const *argv[])
 
 		struct hwa_info	*hwa, *hwahead;
 		char * ifname_split;
-		int i, prflag, k, pf_socket, unix_domain_socket, arplen, ihw, khw, maxfdp;
-		char   *ptr,*ptr1, *hw_address1, sender_ethernet_address[6], buffer[ETH_FRAME_LEN+1];
+		int i, prflag, k, pf_socket, unix_domain_socket, arplen,unixarplen, ihw, khw, maxfdp;
+		char   *ptr,*ptr1, *hw_address1, sender_ethernet_address[6], buffer[ETH_FRAME_LEN+1], unix_buffer[ETH_FRAME_LEN+1];
 		struct sockaddr	*sa;
-		struct sockaddr_un unixaddr;
+		struct sockaddr_un unixaddr, unixarpaddr;
 		struct sockaddr_ll arpaddr;
 		char * dest_mac1; 
 		struct IP_hw_address_mpg IP_hw_address_mpg_collection, cache;
@@ -292,7 +292,53 @@ int main(int argc, char const *argv[])
 		}		
 		if (FD_ISSET(unix_domain_socket, &rset)) 
 		{	
+			
+        	unixarplen=sizeof(unixarpaddr);
+	        if((connfd = accept(unix_domain_socket, (SA *) unixarpaddr, &unixarplen))<0)
+	        {
+	        	 if ( (n = readline(connfd, unix_buffer, MAXLINE)) == 0)
+				{          
+	        	//(n=recvfrom(unix_domain_socket,unix_buffer, ETH_FRAME_LEN+1, 0, &unixarpaddr, &unixarplen)>0)
+	        		printf("Received  packet from unix_domain_socket..s.%\n",unix_buffer);
+	        		unix_buffer
 
+	        		msg_fields[0] = strtok(unix_buffer, "|"); //get pointer to first token found and store in 0
+	                while(msg_fields[i]!= NULL) 
+	                {   /* ensure a pointer was found */
+	                    i++;
+	                    msg_fields[i] = strtok(NULL, "|"); /* continue to tokenize the string */
+	                }
+                
+                	for(j = 0; j <= i-1; j++) {
+          
+                   		 printf("%s\n", msg_fields[j]); /* print out all of the tokens */
+                	}
+ 
+                	hw_address_from_cache=get_ethernet_from_ip(msg_fields[0],msg_fields[2],msg_fields[4],connfd);
+               		
+			        if(hw_address_from_cache!=NULL)
+			        {
+			        	    writen(connfd,hw_address_from_cache, strlen(hw_address_from_cache));
+			        	/*
+						A cache entry has five parts:
+						 (i) IP address ;  
+						(ii) HW address ;  
+						(iii) sll_ifindex (the interface to be used for reaching the matching pair <(i) , (ii)>) ;  
+						(iv) sll_hatype ;  and
+						 (v) a Unix-domain connection-socket descriptor
+			        	*/
+
+			        }else
+			        {
+
+			        }
+		        }else
+		        {
+		        	perror("readline");
+		        }
+
+
+	      
 		}
 //---------------------------------------------------------------------------------------------------------
 

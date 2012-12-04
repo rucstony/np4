@@ -9,9 +9,11 @@
 #define MAX_PAYLOAD_SIZE 1476
 #define USID_PROTO 0xDE  
 #define HOSTNAME_LEN 255
+#define BUFSIZE 1500
 
 struct proto proto_v4 = { proc_v4, send_v4, NULL, NULL, NULL, 0, IPPROTO_ICMP };
 int pg_sock, packet_socket, if_index ;
+int node_visited=0;
 
 char  source_hw_mac_address[6], destination_hw_mac_address[6], source_ip_address[INET_ADDRSTRLEN], destination_ip_address[INET_ADDRSTRLEN];
 
@@ -275,7 +277,7 @@ void sendTourPacket( int sockfd, struct payload * p, char * destination_address,
 
     unsigned char* iphead = sendbuf;
     unsigned char * data = sendbuf+20; 
-  struct iphdr *ip_pkt;
+    struct iphdr *ip_pkt;
 
     struct ip *iph = (struct ip *) iphead;  
     memset(sendbuf,0,BUFSIZE);
@@ -493,10 +495,89 @@ void sendPingPacket( int s , struct icmp * populated_icmp_frame , char * source_
     printf("Done sending..WOO\n");
 }
 
+/*
+  Retrieve the hostname using IP address.
+*/
+void retrieveHostName( const char *address , char * h_name)
+{
+  struct hostent     *hptr;
+  in_addr_t           ipAdd;
+
+  ipAdd =  inet_addr( address );
+
+  if( (hptr = gethostbyaddr( (char*) &ipAdd, sizeof( ipAdd ), AF_INET )) == NULL )
+  {
+    printf("Address is invalid..\n");
+    err_msg("gethostbyaddr error for host: %s: %s",
+              address, hstrerror(h_errno));
+    return;
+  }
+   h_name = hptr->h_name;
+  printf("Client Hostname : `%s`\n",h_name);
+ 
+ } 
+
+void updateLastVisitedIndex()
+{
+
+}
+
+/*
+    Process the recieved packet. Convert to HBO and return the packet.
+*/
+struct odr_frame * preprocessPacket(void * str_from_sock)
+{
+    //unsigned char sendbuf[BUFSIZE];
+    void* buffer = (void*)malloc(BUFSIZE);    /*buffer for ethernet frame*/
+
+    char * payload;
+    unsigned char* iphead = sendbuf;
+    unsigned char * data = sendbuf+20; 
+    struct iphdr *ip_pkt;
+
+    struct ip *iph = (struct ip *) iphead;  
+
+    memcpy((void*)buffer, (void*)str_from_sock, BUFSIZE ); 
+    payload = (char *)data;               
+
+    printf("Recieved payload : %s\n", payload);
+
+
+
+
+/*
+    struct odr_frame * recieved_odr_frame;
+    int j;
+    struct sockaddr_ll socket_address;  
+
+    void* buffer = (void*)malloc(ETH_FRAME_LEN);    
+    unsigned char* etherhead = buffer; 
+    void * data = buffer + 34;
+    
+    printf("\nBeginning processing of recieved packet..\n");
+        
+    printf("1\n");
+        memcpy((void*)buffer, (void*)str_from_sock, ETH_FRAME_LEN ); 
+        printf("2\n");
+    recieved_odr_frame = (struct odr_frame *)data;
+    printf("3\n");
+
+    printf("\t- Converting to Host Byte Order..\n");
+    recieved_odr_frame = convertToHostByteOrder( recieved_odr_frame );
+
+    printf("Done processing of recieved packet..\n");
+    return recieved_odr_frame;
+*/
+
+}
+
+
 void recievePacketFromRTSock(int rt_sock)
 {
     struct sockaddr rtaddr;
+    char source_address[INET_ADDRSTRLEN], char hostname[HOSTNAME_LEN];
     int rtlen, n;
+    time_t ticks;
     void* buffer = (void*)malloc(BUFSIZE); 
     rtlen = sizeof( struct sockaddr );    
 
@@ -504,6 +585,24 @@ void recievePacketFromRTSock(int rt_sock)
     if((n=recvfrom(rt_sock,buffer, BUFSIZE, 0, &rtaddr, &rtlen)>0))
     {
         printf("Recieved %d bytes from whoever..\n",n );
+     
+        preprocessPacket(buffer);
+       /* 
+        checkIfIdentifierValid();
+        retrieveHostName( source_address, hostname );
+
+        ticks = time(NULL);
+        printf("%.24s received source routing packet from %s\n",ctime(&ticks), hostname );
+   
+        if( node_visited != 1 )
+        {
+            joinMulticastGroup();
+            //initiate PINGING here.
+        }    
+        updateLastVisitedIndex();       
+        
+        sendTourPacket();    
+        */
     } 
     return;   
 }

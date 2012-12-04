@@ -575,7 +575,7 @@ struct odr_frame * preprocessPacket(void * str_from_sock)
 void recievePacketFromRTSock(int rt_sock)
 {
     struct sockaddr rtaddr;
-    char source_address[INET_ADDRSTRLEN], char hostname[HOSTNAME_LEN];
+    char source_address[INET_ADDRSTRLEN], hostname[HOSTNAME_LEN];
     int rtlen, n;
     time_t ticks;
     void* buffer = (void*)malloc(BUFSIZE); 

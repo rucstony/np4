@@ -157,7 +157,7 @@ int retrieveDestinationCanonicalIpPresentationFormat(const char *server_vm, char
     if(pptr!=NULL)
     {
       inet_ntop(hptr->h_addrtype,*pptr,destination_canonical_ip_presentation_format,100);
-      printf("Destination canonical IP in presentation format: %s\n", destination_canonical_ip_presentation_format);
+     // printf("Destination canonical IP in presentation format: %s\n", destination_canonical_ip_presentation_format);
       return 1;
     }
     break;

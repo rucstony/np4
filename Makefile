@@ -33,7 +33,7 @@ FLAGS = -w -g -O2
 CFLAGS = ${FLAGS} -I/home/users/cse533/Stevens/unpv13e/lib
 
 
-all: arp  \
+all: arp
 #	get_hw_addrs.o prhwaddrs.o ${CC} -o prhwaddrs prhwaddrs.o get_hw_addrs.o ${LIBS}
 
 #app_functions.o: app_functions.c
@@ -42,8 +42,11 @@ all: arp  \
 get_hw_addrs.o: get_hw_addrs.c
 	${CC} ${FLAGS} -c get_hw_addrs.c
 
-arp: arp.o get_hw_addrs.o
-	${CC} ${FLAGS} -o arp arp.o get_hw_addrs.o ${LIBS}
+arp_api.o: arp_api.c
+	${CC} ${CFLAGS} -c arp_api.c
+
+arp: arp.o get_hw_addrs.o arp_api.o
+	${CC} ${FLAGS} -o arp arp.o get_hw_addrs.o arp_api.o ${LIBS}
 arp.o: arp.c
 	${CC} ${CFLAGS} -c arp.c
 
@@ -51,5 +54,5 @@ arp.o: arp.c
 
 	
 clean:
-	rm arp arp.o get_hw_addrs.o
+	rm arp arp.o get_hw_addrs.o arp_api.o
 

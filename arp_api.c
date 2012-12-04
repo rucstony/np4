@@ -1,4 +1,5 @@
-
+#include  "unp.h"
+#include "hw_addrs.h"
 #define UNIXDG_PATH "testpath"
 
 struct hwaddr 
@@ -8,11 +9,17 @@ struct hwaddr
     unsigned char   sll_halen;       /* Length of address */
     unsigned char   sll_addr[8];     /* Physical layer address */
 };
+static void arp_receive_timeout(int signo)
+{
+    printf("ARP Request timeout\n");
+
+    return;
+}
 int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 {
     int unix_domain_socket, send_result, replen, n, ihw, khw;
-    sockaddr_un unixaddr, repaddr;
-    char *ip_address, str_from_sock, output_to_sock;
+    struct sockaddr_un unixaddr, repaddr;
+    char *ip_address, str_from_sock[MAXLINE], output_to_sock[MAXLINE], node_ethernet_address[MAXLINE];
     if((unix_domain_socket = socket(AF_LOCAL, SOCK_STREAM, 0))==-1)
     {
         printf("Error in creation of Unix Domain socket\n");
@@ -34,14 +41,14 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 
       
     
-    //Sock_ntop_host(IPaddr, sizeof(*IPaddr))
-    inet_ntop( AF_INET, &(IPaddr->sin_addr), ip_address, INET_ADDRSTRLEN );
+    strcpy(ip_address,Sock_ntop_host(IPaddr, sizeof(*IPaddr)));
+   // inet_ntop( AF_INET, (IPaddr->sin_addr), ip_address, INET_ADDRSTRLEN );
 
     printf("areq() called for IP address: %s\n",ip_address );
     sprintf(output_to_sock,"%s|%d|%hu|%c\n", ip_address, 
-                                          HWaddr.sll_ifindex,
-                                          HWaddr.sll_hatype,
-                                          HWaddr.sll_halen);
+                                          HWaddr->sll_ifindex,
+                                          HWaddr->sll_hatype,
+                                          HWaddr->sll_halen);
 //    printf("%s\n", output_to_sock);
     printf("\nMessage sent to ARP unix domain socket..%s\n",output_to_sock );
     
@@ -68,7 +75,7 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
     
         do 
         {   
-            HWaddr.sll_addr[khw] = str_from_sock[khw] & 0xff;
+            HWaddr->sll_addr[khw] = str_from_sock[khw] & 0xff;
             
             printf("%.2x%s", node_ethernet_address[khw] & 0xff, (ihw == 1) ? " " : ":");
             khw++;
@@ -85,10 +92,4 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 
 
 
-}
-static void arp_receive_timeout(int signo)
-{
-    printf("ARP Request timeout\n");
-
-    return;
 }

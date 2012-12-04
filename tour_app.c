@@ -1,10 +1,15 @@
 #include  "unp.h"
 #include <netinet/ip.h>
 #include    "ping.h"
-#define IDENTIFIER 72217
+#define IDENTIFIER 17537
 #define MAX_PAYLOAD_SIZE 1500
 #define IPPROTO_USID    537    
 #define HOSTNAME_LEN 255
+
+#define TOUR_PAYLOAD 1480
+#define BUFSIZE 1500
+#define IDENTIFICATION 17537
+
 
 //struct proto    proto_v4 = { proc_v4, send_v4, NULL, NULL, NULL, 0, IPPROTO_ICMP };
 int packet_socket, if_index ;
@@ -196,8 +201,105 @@ int createIPTourString( char * IPaddress_list, char *argv[] )
     return 1;
 }
 
-struct ip * createIPPacket()
+
+/*
+    
+The definition of struct ip_mreq is as follows:
+
+    struct ip_mreq 
+    {
+        struct in_addr imr_multiaddr; 
+        struct in_addr imr_interface; 
+    }
+*/
+int joinMulticastGroup( int sock, char * multicast_ip_address, char * joining_local_interface_ip_address )
 {
+    struct ip_mreq mreq;
+    mreq.imr_multiaddr.s_addr =  inet_addr( multicast_ip_address );
+    mreq.imr_interface.s_addr = inet_addr( joining_local_interface_ip_address );
+ 
+    if( setsockopt(sock,IPPROTO_IP,IP_ADD_MEMBERSHIP,&mreq,sizeof(mreq)) == -1 )
+    {
+        printf("Unable to join multicast group.. Error code : %d\n", errno );
+        return  0;
+    }       
+
+    return 1;
+}
+
+
+/*
+    last_visited_index = 0 when starting from source. 
+        incremented when at each node of the tour. 
+*/
+char * retrieveNextTourIpAddress( char * IPaddress_list, int last_visited_index )
+{
+    int i;
+    char * p;
+
+    p = strtok( IPaddress_list,"|" );
+
+    for(i=0;i<=last_visited_index;i++)
+    {
+        printf("%s\n",p );
+        p = strtok( NULL,"|" );         
+    }    
+    printf("Next IP address to be sent to : %s", p);
+    return p;
+}
+
+/*
+    Retrieves the Multicast address and port number from the string. 
+*/
+int retrieveMulticastIpAddress( char * IPaddress_list )
+{
+    int i;
+    char * p,* prev, * port;
+
+    p = strtok( IPaddress_list,"|" );
+
+    while( p != NULL )
+    {
+        prev = p;
+        p = strtok( NULL,"|" );         
+    }    
+    p = strtok(prev,":");
+    port = atoi( strtok(NULL, ":") );
+
+    printf("Multicast Address to  : %s\n", prev);
+    printf("Port number : %d\n", port );
+    return 1;
+}
+
+void sendTourPacket( int sockfd, char * payload, char * destination_address, char * source_address )
+{
+    struct ip       *ip;
+    char            sendbuf[BUFSIZE];
+    size_t          len;
+    socklen_t       servlen;
+    struct sockaddr servaddr;
+
+    /* Pointer to beginning of payload */
+    char * data = sendbuf+20; 
+  
+    ip = (struct ip *) sendbuf;     /* start of IP header */
+    ip->ip_p = htons(IPPROTO_ICMP);
+    ip->ip_id = htons(IDENTIFIER);
+    ip->ip_sum = htons(0);
+    inet_aton(source_address, ip->ip_src);
+    inet_aton(destination_address, ip->ip_dst);
+        
+    memcpy( data,payload,sizeof(payload) ); 
+    len = sizeof(sendbuf);
+
+    bzero( &servaddr, sizeof( servaddr ) );
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons( 61616 );
+    inet_pton( AF_INET, destination_address, &servaddr.sin_addr );
+    
+    servlen = sizeof(servaddr);
+
+    sendto(sockfd, sendbuf, len, 0, &servaddr, servlen);
 
 }
 

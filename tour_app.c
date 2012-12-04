@@ -82,6 +82,32 @@ struct ip * createIPPacket()
 
 }
 
+
+/*
+    
+The definition of struct ip_mreq is as follows:
+
+    struct ip_mreq 
+    {
+        struct in_addr imr_multiaddr; 
+        struct in_addr imr_interface; 
+    }
+*/
+int joinMulticastGroup( int sock, char * multicast_ip_address, char * joining_local_interface_ip_address )
+{
+    struct ip_mreq mreq;
+    mreq.imr_multiaddr.s_addr =  inet_addr( multicast_ip_address );
+    mreq.imr_interface.s_addr = inet_addr( joining_local_interface_ip_address );
+ 
+    if( setsockopt(sock,IPPROTO_IP,IP_ADD_MEMBERSHIP,&mreq,sizeof(mreq)) == -1 )
+    {
+        printf("Unable to join multicast group.. Error code : %d\n", errno );
+        return  0;
+    }       
+
+    return 1;
+}
+
 int main(int argc, char const *argv[])
 {
     int         packet_socket, rt_sock, pg_sock, iptour_return;

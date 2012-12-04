@@ -235,7 +235,7 @@ char * retrieveNextTourIpAddress( char * IPaddress_list, int last_visited_index 
         printf("%s\n",p );
         p = strtok( NULL,"|" );         
     }    
-    printf("Next IP address to be sent to : %s", p);
+    printf("Next IP address to be sent to : %s\n", p);
     return p;
 }
 
@@ -290,7 +290,7 @@ void sendTourPacket( int sockfd, struct payload * p, char * destination_address,
     
     servlen = sizeof(servaddr);
 
-    printf("Sending tour packet..\n");
+    printf("Sending tour packet to %s from source : %s \n", destination_address, source_address);
     Sendto(sockfd, sendbuf, len, 0, &servaddr, servlen);
 
 }
@@ -533,7 +533,7 @@ int main(int argc, char const *argv[])
     }    
 
     printf("DONE SENDINGS WOOOO.\n");
-    exit(0); 
+//    exit(0); 
        
     printf("<time>   received source routing packet from <hostname>.\n");
 

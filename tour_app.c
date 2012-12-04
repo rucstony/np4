@@ -292,6 +292,7 @@ void sendTourPacket( int sockfd, struct payload * p, char * destination_address,
 
     printf("Sending tour packet to %s from source : %s \n", destination_address, source_address);
     Sendto(sockfd, sendbuf, len, 0, &servaddr, servlen);
+    printf("DONE SENDINGS WOOOO.\n");
 
 }
 
@@ -532,7 +533,6 @@ int main(int argc, char const *argv[])
 
     }    
 
-    printf("DONE SENDINGS WOOOO.\n");
 //    exit(0); 
        
     printf("<time>   received source routing packet from <hostname>.\n");

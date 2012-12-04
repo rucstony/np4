@@ -6,6 +6,7 @@
 #include <linux/if_arp.h>
 #define ETH_FRAME_LEN 1514
 #define IDENTIFIER 72217
+#define IPPROTO_USID 175
 #define MAX_PAYLOAD_SIZE 1500
 #define USID_PROTO 0x4481  
 #define HOSTNAME_LEN 255
@@ -495,7 +496,7 @@ int main(int argc, char const *argv[])
         return 0;
     }
  
-    if((rt_sock = socket(AF_INET, SOCK_RAW, USID_PROTO))==-1)
+    if((rt_sock = socket(AF_INET, SOCK_RAW, IPPROTO_USID))==-1)
     {
         printf("Error in creation of IP raw socket.rt_sock\n");
         perror("socket");

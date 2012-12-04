@@ -168,13 +168,21 @@ int retrieveDestinationCanonicalIpPresentationFormat(const char *server_vm, char
   }
 }
 
+void retrieveOwnCanonicalIPAddress( char * IPaddress )  
+{
+    char own_vm_name[HOSTNAME_LEN];
+    gethostname( own_vm_name, sizeof(own_vm_name) );
+    retrieveDestinationCanonicalIpPresentationFormat(own_vm_name, IPaddress);      
+    return;
+}
+
 /*
     Stores the IP addresses of the vm-tour in a comma-separated string to be passed as payload to the tour-members.
 */
 int createIPTourString( char * IPaddress_list, char *argv[], char * IPmulticast_address, int port)
 {
     int i;
-    char IPaddress[INET_ADDRSTRLEN], own_vm_name[HOSTNAME_LEN];
+    char IPaddress[INET_ADDRSTRLEN];
     
     /* Return the current node's eth0 interface's IP address. */
     gethostname( own_vm_name, sizeof(own_vm_name) );
@@ -217,7 +225,10 @@ char * retrieveNextTourIpAddress( char * IPaddress_list, int last_visited_index 
     char * p;
 
     p = strtok( IPaddress_list,"|" );
-
+    if( last_visited_index == -1 )
+    {
+        return p;
+    }    
     for(i=0;i<=last_visited_index;i++)
     {
         printf("%s\n",p );
@@ -278,6 +289,7 @@ void sendTourPacket( int sockfd, struct payload * p, char * destination_address,
     
     servlen = sizeof(servaddr);
 
+    printf("Sending tour packet..\n");
     Sendto(sockfd, sendbuf, len, 0, &servaddr, servlen);
 
 }
@@ -463,6 +475,7 @@ int main(int argc, char const *argv[])
     int   rt_sock,  iptour_return, maxfd;
     const int   on = 1;
     char IPaddress_list[MAX_PAYLOAD_SIZE], IPmulticast_address[INET_ADDRSTRLEN] = "239.108.175.37", host[INET_ADDRSTRLEN];
+    char source_address[INET_ADDRSTRLEN];
     int port_number = 17537;
     fd_set          rset;
     int             c;
@@ -470,7 +483,7 @@ int main(int argc, char const *argv[])
     char *h;
     int datalen = 56;
     struct payload * p;
-
+    char * destination_address;
 
     if((packet_socket = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_IP) ) )==-1)
     {
@@ -511,6 +524,8 @@ int main(int argc, char const *argv[])
             printf("\nIP Tour List : %s\n",IPaddress_list);
         
         p = createPayload( IPaddress_list );
+        retrieveOwnCanonicalIPAddress( source_address );
+        destination_address =  retrieveNextTourIpAddress(IPaddress_list,-1);
         sendTourPacket( rt_sock, p, destination_address,source_address );
 
     }    

@@ -226,10 +226,10 @@ char * retrieveNextTourIpAddress( char * IPaddress_list, int last_visited_index 
     char * p;
 
     p = strtok( IPaddress_list,"|" );
-    if( last_visited_index == -1 )
-    {
-        return p;
-    }    
+ //   if( last_visited_index == -1 )
+  //  {
+   //     return p;
+   // }    
     for(i=0;i<=last_visited_index;i++)
     {
         printf("%s\n",p );
@@ -528,7 +528,7 @@ int main(int argc, char const *argv[])
         
         p = createPayload( IPaddress_list );
         retrieveOwnCanonicalIPAddress( source_address );
-        destination_address =  retrieveNextTourIpAddress(IPaddress_list,-1);
+        destination_address =  retrieveNextTourIpAddress(IPaddress_list,0);
         sendTourPacket( rt_sock, p, destination_address,source_address );
 
     }    

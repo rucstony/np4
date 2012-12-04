@@ -274,7 +274,7 @@ void sendTourPacket( int sockfd, struct payload * p, char * destination_address,
     char * data = sendbuf+20; 
   
     ip = (struct ip *) sendbuf;     /* start of IP header */
-    ip->ip_p = htons(IPPROTO_ICMP);
+    ip->ip_p = htons(USID_PROTO);
     ip->ip_id = htons(IDENTIFIER);
     ip->ip_sum = htons(0);
     inet_aton(source_address, &ip->ip_src);
@@ -495,7 +495,7 @@ int main(int argc, char const *argv[])
         return 0;
     }
  
-    if((rt_sock = socket(AF_INET, SOCK_RAW, IDENTIFIER))==-1)
+    if((rt_sock = socket(AF_INET, SOCK_RAW, USID_PROTO))==-1)
     {
         printf("Error in creation of IP raw socket.rt_sock\n");
         perror("socket");

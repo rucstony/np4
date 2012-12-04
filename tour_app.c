@@ -6,9 +6,8 @@
 #include <linux/if_arp.h>
 #define ETH_FRAME_LEN 1514
 #define IDENTIFIER 72217
-#define IPPROTO_USID 175
-#define MAX_PAYLOAD_SIZE 1500
-#define USID_PROTO 0x4481  
+#define MAX_PAYLOAD_SIZE 1476
+#define USID_PROTO 0xDE  
 #define HOSTNAME_LEN 255
 
 struct proto proto_v4 = { proc_v4, send_v4, NULL, NULL, NULL, 0, IPPROTO_ICMP };
@@ -265,34 +264,84 @@ int retrieveMulticastIpAddress( char * IPaddress_list )
 
 void sendTourPacket( int sockfd, struct payload * p, char * destination_address, char * source_address )
 {
-    struct ip       *ip;
-    char            sendbuf[BUFSIZE];
+           
+    char            sendbuf1[BUFSIZE], str[10];
     size_t          len;
     socklen_t       servlen;
     struct sockaddr_in servaddr;
-
+    struct in_addr ip_src, ip_dst; 
     /* Pointer to beginning of payload */
-    char * data = sendbuf+20; 
+    unsigned char sendbuf[BUFSIZE];
+
+    unsigned char* iphead = sendbuf;
+    unsigned char * data = sendbuf+20; 
+  struct iphdr *ip_pkt;
+
+    struct ip *iph = (struct ip *) iphead;  
+    memset(sendbuf,0,BUFSIZE);
+
+       /* start of IP header */
+
+    /* Fill out the IP header. */
+  ip_pkt = (struct iphdr *) (sendbuf);
+  ip_pkt->ihl = 5;              /* Header length / 4.  Always 5 if no opts. */
+  ip_pkt->version = 4;          /* IP version.         Always 4.            */
+  ip_pkt->tos = 0;              /* Type of service.    8 bits.              */
+                                /* Total length.       Bytes, up to 64K.    */
+  ip_pkt->tot_len = htons (BUFSIZE);
+  ip_pkt->id = 0;               /* Identification.                          */
+  ip_pkt->frag_off = 0;         /* Fragment offset.                         */
+  ip_pkt->ttl = 64;             /* Time to live.       8 bits.              */
+  ip_pkt->protocol = USID_PROTO; /* Protocol.         IPPROTO_xxx          */
+                                /* Source address.     IP address.          */
+    
+  ip_pkt->saddr=  inet_addr(source_address);
+  ip_pkt->daddr=  inet_addr(destination_address);
+
+  /* Compute the IP header checksum. */
+  ip_pkt->check = 0;
+ // ip_pkt->check = ip_fast_csum ((unsigned char *) ip_pkt, ip_pkt->ihl);
+   /* 
+    iph->ip_v=4;
+    iph->ip_hl=20;
   
-    ip = (struct ip *) sendbuf;     /* start of IP header */
-    ip->ip_p = htons(USID_PROTO);
-    ip->ip_id = htons(IDENTIFIER);
-    ip->ip_sum = htons(0);
-    inet_aton(source_address, &ip->ip_src);
-    inet_aton(destination_address, &ip->ip_dst);
-        
-    memcpy( (void *)data,(void *)p,sizeof(*p) ); 
-    len = sizeof(sendbuf);
+
+   iph->ip_tos=16;           
+   iph->ip_len=htons(BUFSIZE);         
+    iph->ip_id = 1;      
+    iph->ip_off=0;         
+
+   iph->ip_ttl=64;            
+    iph->ip_p = USID_PROTO;       
+    iph->ip_sum = 0;   
+    */   
+     /* source and dest address */
+
+   // iph->ip_id = htons(IDENTIFIER);
+
+    
+   // inet_aton(source_address, &ip_src);
+    //inet_aton(destination_address, &ip_dst);
+    //memcpy((void *)&iph->ip_src,(void *)&ip_src,sizeof(struct in_addr));
+    //memcpy((void *)&iph->ip_dst,(void *)&ip_dst,sizeof(struct in_addr));
+   // inet_pton(AF_INET, destination_address, (struct in_addr *)&daddr.sin_addr.s_addr);
+    printf("size of payload: %d\n", sizeof(struct payload));        
+    memcpy( (void *)data,(void *)p,sizeof(struct payload) ); 
+   // len = sizeof(*sendbuf);
 
     bzero( &servaddr, sizeof( servaddr ) );
     servaddr.sin_family = AF_INET;
-    servaddr.sin_port = htons( 61616 );
-    inet_pton( AF_INET, destination_address, &servaddr.sin_addr );
-    
+    servaddr.sin_port = htons( 0 );
+
+    inet_pton( AF_INET, destination_address,(struct in_addr *) &servaddr.sin_addr);
+
+
+    printf("IP: %s",inet_ntop(AF_INET,&servaddr.sin_addr,str,100));
     servlen = sizeof(servaddr);
 
     printf("Sending tour packet to %s from source : %s \n", destination_address, source_address);
-    Sendto(sockfd, sendbuf, len, 0, &servaddr, servlen);
+    sendto(sockfd, sendbuf, BUFSIZE, 0, &servaddr, servlen);
+    perror("sendto");
     printf("DONE SENDINGS WOOOO.\n");
 
 }
@@ -496,7 +545,7 @@ int main(int argc, char const *argv[])
         return 0;
     }
  
-    if((rt_sock = socket(AF_INET, SOCK_RAW, IPPROTO_USID))==-1)
+    if((rt_sock = socket(AF_INET, SOCK_RAW, USID_PROTO))==-1)
     {
         printf("Error in creation of IP raw socket.rt_sock\n");
         perror("socket");
@@ -535,8 +584,6 @@ int main(int argc, char const *argv[])
     }    
 
 //    exit(0); 
-       
-    printf("<time>   received source routing packet from <hostname>.\n");
 
     FD_ZERO( &rset );
     maxfd = max( /*pg_sock*/0, rt_sock ) +1;

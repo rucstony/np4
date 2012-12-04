@@ -7,7 +7,9 @@
 #define HOSTNAME_LEN 255
 
 //struct proto    proto_v4 = { proc_v4, send_v4, NULL, NULL, NULL, 0, IPPROTO_ICMP };
-
+int packet_socket, if_index ;
+char  source_hw_mac_address[6], destination_hw_mac_address[6], source_ip_address[INET_ADDRSTRLEN], destination_ip_address[INET_ADDRSTRLEN])
+  
 struct proto {
   struct sockaddr  *sasend; /* sockaddr{} for send, from getaddrinfo */
   struct sockaddr  *sarecv; /* sockaddr{} for receiving */
@@ -108,8 +110,9 @@ void send_v4(void)
     len = 8 + datalen;      /* checksum ICMP header and data */
    // icmp->icmp_cksum = 0;
    // icmp->icmp_cksum = in_cksum((u_short *) icmp, len);
+    sendPingPacket( packet_socket ,icmp, source_hw_mac_address, destination_hw_mac_address , if_index , source_ip_address, destination_ip_address)
 
-    Sendto(sockfd, sendbuf, len, 0, pr->sasend, pr->salen);
+    //Sendto(sockfd, sendbuf, len, 0, pr->sasend, pr->salen);
 }
 
 void sig_alrm(int signo)
@@ -224,6 +227,126 @@ int joinMulticastGroup( int sock, char * multicast_ip_address, char * joining_lo
     return 1;
 }
 
+void sendPingPacket( int s , struct icmp * populated_icmp_frame , char * source_hw_mac_address, char * destination_hw_mac_address , int if_index ,char * source_ip_address, char * destination_ip_address)
+{
+    
+    int j,i;
+    /*target address*/
+    struct sockaddr_ll socket_address;
+
+    /*buffer for ethernet frame*/
+    void* buffer = (void*)malloc(ETH_FRAME_LEN);
+     
+    /*pointer to ethenet header*/
+    unsigned char* etherhead = buffer;
+
+    /*pointer to ethenet header*/
+    unsigned char* iphead = buffer + 14;
+        
+    /*pointer to userdata in ethernet frame*/
+    unsigned char* data = buffer + 34;
+        
+    /*another pointer to ethernet header*/
+    struct ethhdr *eh = (struct ethhdr *)etherhead;
+     
+/*another pointer to ethernet header*/
+    struct ip *iph = (struct ip *)iphead;
+    
+
+    int send_result = 0,k=0;
+
+    /*our MAC address*/
+    unsigned char src_mac[6], dest_mac[6]; 
+
+    char * src_mac1=source_hw_mac_address; 
+    char * dest_mac1=destination_hw_mac_address; 
+
+
+//  unsigned char src_mac[6] = {0x00, 0x0c, 0x29, 0x11, 0x58, 0xa2};
+    
+    /*Broadcast MAC address*/
+    //unsigned char dest_mac[6] = {0x00, 0x0c, 0x29, 0x24, 0x8f, 0x70};
+    //unsigned char dest_mac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    
+    i = IF_HADDR;
+    printf("\n\nSending Ping Packet to  \n\t Destination H/W Address :\n");
+    do 
+    {   
+        dest_mac[k] = *destination_hw_mac_address++ & 0xff;
+        k++;
+        printf("%.2x%s", *dest_mac1++ & 0xff, (i == 1) ? " " : ":");
+    } while (--i > 0);
+    printf("\n");
+    
+
+    printf("\tsending frame on socket: %d\n",s );
+    //printf("\tpopulated_odr_frame: %d bytes.\n",sizeof(*populated_odr_frame));
+    /*prepare sockaddr_ll*/
+    
+    printf("\t Source H/W Address :\n");
+    i = IF_HADDR;
+    k=0;
+    do 
+    {   
+        src_mac[k] = *source_hw_mac_address++ & 0xff;
+        k++;
+        printf("%.2x%s", *src_mac1++ & 0xff, (i == 1) ? " " : ":");
+    } while (--i > 0);
+
+
+    /*RAW communication*/
+    socket_address.sll_family   = PF_PACKET;    
+    /*we don't use a protocoll above ethernet layer
+      ->just use anything here*/
+    socket_address.sll_protocol = htons(ETH_P_IP);  
+
+    /*ARP hardware identifier is ethernet*/
+    socket_address.sll_hatype   = ARPHRD_ETHER;
+        
+    /*target is another host*/
+    socket_address.sll_pkttype  = PACKET_OTHERHOST;
+
+    /*index of the network device
+    see full code later how to retrieve it*/
+    socket_address.sll_ifindex  = if_index;
+
+    /*address length*/
+    socket_address.sll_halen    = ETH_ALEN;     
+
+    printf("Before socket_address..\n");    
+    /*MAC - begin*/
+    socket_address.sll_addr[0]  = dest_mac[0];      
+    socket_address.sll_addr[1]  = dest_mac[1];      
+    socket_address.sll_addr[2]  = dest_mac[2];
+    socket_address.sll_addr[3]  = dest_mac[3];
+    socket_address.sll_addr[4]  = dest_mac[4];
+    socket_address.sll_addr[5]  = dest_mac[5];
+    /*MAC - end*/
+    socket_address.sll_addr[6]  = 0x00;/*not used*/
+    socket_address.sll_addr[7]  = 0x00;/*not used*/
+
+    /*set the frame header*/
+    memcpy((void*)buffer, (void*)dest_mac, ETH_ALEN);
+    memcpy((void*)(buffer+ETH_ALEN), (void*)src_mac, ETH_ALEN);
+    eh->h_proto = htons(USID_PROTO);
+
+    //fill ip header
+    iph->ip_id=htons(IDENTIFIER);
+    iph->ip_p=htons(IPPROTO_ICMP);
+    iph->ip_hl=htons(20);
+    iph->ip_sum=htons(0);
+    inet_aton(source_ip_address, ip->ip_src);
+    inet_aton(destination_ip_address, ip->ip_dst);
+    /*fill the frame with some datip_src,a*/
+    memcpy((void*)data,(void*)populated_icmp_frame, sizeof( struct icmp ));
+
+    printf("Just before send.. \n");
+    /*send the packet*/
+    send_result = sendto(s, buffer, ETH_FRAME_LEN, 0, 
+              (struct sockaddr*)&socket_address, sizeof(socket_address));
+    if (send_result == -1){ perror("sendto"); }
+    printf("Done sending..WOO\n");
+}
 
 
 
@@ -231,7 +354,7 @@ int joinMulticastGroup( int sock, char * multicast_ip_address, char * joining_lo
 
 int main(int argc, char const *argv[])
 {
-    int         packet_socket, rt_sock, pg_sock, iptour_return;
+    int   rt_sock, pg_sock, iptour_return;
     const int   on = 1;
     char IPaddress_list[MAX_PAYLOAD_SIZE], IPmulticast_address[INET_ADDRSTRLEN] = "239.108.175.37", host[INET_ADDRSTRLEN];
     int port_number = 17537;

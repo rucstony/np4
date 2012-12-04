@@ -265,8 +265,8 @@ void sendTourPacket( int sockfd, struct payload * p, char * destination_address,
     ip->ip_p = htons(IPPROTO_ICMP);
     ip->ip_id = htons(IDENTIFIER);
     ip->ip_sum = htons(0);
-    inet_aton(source_address, ip->ip_src);
-    inet_aton(destination_address, ip->ip_dst);
+    inet_aton(source_address, &ip->ip_src);
+    inet_aton(destination_address, &ip->ip_dst);
         
     memcpy( (void *)data,(void *)p,sizeof(*p) ); 
     len = sizeof(sendbuf);
@@ -432,9 +432,10 @@ void sendPingPacket( int s , struct icmp * populated_icmp_frame , char * source_
 void recievePacketFromRTSock(int rt_sock)
 {
     struct sockaddr rtaddr;
-    int rtlen;
-    rtlen = sizeof( struct sockaddr );    
+    int rtlen, n;
     void* buffer = (void*)malloc(BUFSIZE); 
+    rtlen = sizeof( struct sockaddr );    
+
 
     if((n=recvfrom(rt_sock,buffer, BUFSIZE, 0, &rtaddr, &rtlen)>0))
     {
@@ -510,7 +511,7 @@ int main(int argc, char const *argv[])
             printf("\nIP Tour List : %s\n",IPaddress_list);
         
         p = createPayload( IPaddress_list );
-        sendTourPacket( rt_sock, p, char * destination_address, char * source_address );
+        sendTourPacket( rt_sock, p, destination_address,source_address );
 
     }    
 

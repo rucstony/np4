@@ -23,6 +23,12 @@ struct proto {
 } *pr;
 
 
+struct payload
+{
+    char IPaddress_list[MAX_PAYLOAD_SIZE];
+    int last_visited_index;
+};
+
 void readloop(int sockfd)
 {
     int             size;
@@ -170,6 +176,14 @@ int retrieveDestinationCanonicalIpPresentationFormat(const char *server_vm, char
   }
 }
 
+struct payload * createPayload( char * IPaddress_list )
+{
+    struct payload * p = (struct payload *)malloc( sizeof(struct payload) );
+    strcpy(p->IPaddress_list, IPaddress_list);
+    p->last_visited_index = 0;
+    return p;
+}
+
 /*
     Stores the IP addresses of the vm-tour in a comma-separated string to be passed as payload to the tour-members.
 */
@@ -271,7 +285,7 @@ int retrieveMulticastIpAddress( char * IPaddress_list )
     return 1;
 }
 
-void sendTourPacket( int sockfd, char * payload, char * destination_address, char * source_address )
+void sendTourPacket( int sockfd, struct payload * p, char * destination_address, char * source_address )
 {
     struct ip       *ip;
     char            sendbuf[BUFSIZE];
@@ -289,7 +303,7 @@ void sendTourPacket( int sockfd, char * payload, char * destination_address, cha
     inet_aton(source_address, ip->ip_src);
     inet_aton(destination_address, ip->ip_dst);
         
-    memcpy( data,payload,sizeof(payload) ); 
+    memcpy( (void *)data,(void *)p,sizeof(*p) ); 
     len = sizeof(sendbuf);
 
     bzero( &servaddr, sizeof( servaddr ) );
@@ -299,7 +313,7 @@ void sendTourPacket( int sockfd, char * payload, char * destination_address, cha
     
     servlen = sizeof(servaddr);
 
-    sendto(sockfd, sendbuf, len, 0, &servaddr, servlen);
+    Sendto(sockfd, sendbuf, len, 0, &servaddr, servlen);
 
 }
 
@@ -464,14 +478,7 @@ int main(int argc, char const *argv[])
     struct addrinfo *ai;
     char *h;
     int datalen = 56;
-    if( createIPTourString(IPaddress_list, argv, IPmulticast_address, port_number) == -1 )
-    {
-        printf("Error : Same node should not appear consequentively in the tour list..Exiting..\n");
-        exit(1);
-    }    
-    else
-        printf("\nIP Tour List : %s\n",IPaddress_list);
-
+    struct payload * p;
 
     if((packet_socket = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_IP) ) )==-1)
     {
@@ -496,11 +503,29 @@ int main(int argc, char const *argv[])
     }
 
     /* Setting the socket options to IP_HDRINCL */ 
-    if( setsockopt( rt_sock, SOL_SOCKET, IP_HDRINCL, &on, sizeof(on)) == -1 )
+    if( setsockopt( rt_sock, IPPROTO_IP, IP_HDRINCL, &on, sizeof(on)) == -1 )
     {
         printf("Unable to set socket to SO_REUSEADDR. Error code : %d\nExiting..\n", errno );
     }       
+    
+    if( argc > 1 )
+    {    
+        if( createIPTourString(IPaddress_list, argv, IPmulticast_address, port_number) == -1 )
+        {
+            printf("Error : Same node should not appear consequentively in the tour list..Exiting..\n");
+            exit(1);
+        }    
+        else
+            printf("\nIP Tour List : %s\n",IPaddress_list);
+        
+        p = createPayload( IPaddress_list );
+        sendTourPacket( rt_sock, p, char * destination_address, char * source_address );
 
+    }    
+
+    printf("DONE SENDINGS WOOOO.\n");
+    exit(0); 
+       
     printf("<time>   received source routing packet from <hostname>.\n");
 
 

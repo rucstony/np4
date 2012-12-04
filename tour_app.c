@@ -12,6 +12,7 @@
 
 struct proto proto_v4 = { proc_v4, send_v4, NULL, NULL, NULL, 0, IPPROTO_ICMP };
 int pg_sock, packet_socket, if_index ;
+
 char  source_hw_mac_address[6], destination_hw_mac_address[6], source_ip_address[INET_ADDRSTRLEN], destination_ip_address[INET_ADDRSTRLEN];
 
 
@@ -170,7 +171,7 @@ int retrieveDestinationCanonicalIpPresentationFormat(const char *server_vm, char
 
 void retrieveOwnCanonicalIPAddress( char * IPaddress )  
 {
-    char own_vm_name[HOSTNAME_LEN];
+    char own_vm_name[HOSTNAME_LEN];   
     gethostname( own_vm_name, sizeof(own_vm_name) );
     retrieveDestinationCanonicalIpPresentationFormat(own_vm_name, IPaddress);      
     return;
@@ -183,7 +184,7 @@ int createIPTourString( char * IPaddress_list, char *argv[], char * IPmulticast_
 {
     int i;
     char IPaddress[INET_ADDRSTRLEN];
-    
+    char own_vm_name[HOSTNAME_LEN];
     /* Return the current node's eth0 interface's IP address. */
     gethostname( own_vm_name, sizeof(own_vm_name) );
     retrieveDestinationCanonicalIpPresentationFormat(own_vm_name, IPaddress_list);      
@@ -267,7 +268,7 @@ void sendTourPacket( int sockfd, struct payload * p, char * destination_address,
     char            sendbuf[BUFSIZE];
     size_t          len;
     socklen_t       servlen;
-    struct sockaddr servaddr;
+    struct sockaddr_in servaddr;
 
     /* Pointer to beginning of payload */
     char * data = sendbuf+20; 
@@ -459,9 +460,10 @@ void recievePacketFromRTSock(int rt_sock)
 void recievePacketFromPGSock(int pg_sock)
 {
     struct sockaddr pgaddr;
-    int pglen;
-    pglen = sizeof( struct sockaddr );    
+    int pglen,n;
+    
     void* buffer = (void*)malloc(BUFSIZE); 
+    pglen = sizeof( struct sockaddr );   
 
     if((n=recvfrom(pg_sock,buffer, BUFSIZE, 0, &pgaddr, &pglen)>0))
     {
@@ -478,7 +480,7 @@ int main(int argc, char const *argv[])
     char source_address[INET_ADDRSTRLEN];
     int port_number = 17537;
     fd_set          rset;
-    int             c;
+    int             c, nready;
     struct addrinfo *ai;
     char *h;
     int datalen = 56;
@@ -492,16 +494,16 @@ int main(int argc, char const *argv[])
         return 0;
     }
  
-    if((rt_sock = socket(AF_INET, SOCK_RAW, 0))==-1)
+    if((rt_sock = socket(AF_INET, SOCK_RAW, IDENTIFIER))==-1)
     {
-        printf("Error in creation of IP raw socket.\n");
+        printf("Error in creation of IP raw socket.rt_sock\n");
         perror("socket");
         return;
         
     }
     if((pg_sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP))==-1)
     {
-        printf("Error in creation of IP raw socket.\n");
+        printf("Error in creation of IP raw socket.pg_sock\n");
         perror("socket");
         return;
         

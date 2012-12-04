@@ -15,6 +15,12 @@ int pg_sock, packet_socket, if_index ;
 char  source_hw_mac_address[6], destination_hw_mac_address[6], source_ip_address[INET_ADDRSTRLEN], destination_ip_address[INET_ADDRSTRLEN];
 
 
+struct payload
+{
+    char IPaddress_list[MAX_PAYLOAD_SIZE];
+    int last_visited_index;
+};
+
 void readloop()
 {
     int             size;
@@ -193,8 +199,86 @@ int createIPTourString( char * IPaddress_list, char *argv[], char * IPmulticast_
     return 1;
 }
 
-struct ip * createIPPacket()
+struct payload * createPayload( char * IPaddress_list )
 {
+    struct payload * p = (struct payload *)malloc( sizeof(struct payload) );
+    strcpy(p->IPaddress_list, IPaddress_list);
+    p->last_visited_index = 0;
+    return p;
+}
+
+/*
+    last_visited_index = 0 when starting from source. 
+        incremented when at each node of the tour. 
+*/
+char * retrieveNextTourIpAddress( char * IPaddress_list, int last_visited_index )
+{
+    int i;
+    char * p;
+
+    p = strtok( IPaddress_list,"|" );
+
+    for(i=0;i<=last_visited_index;i++)
+    {
+        printf("%s\n",p );
+        p = strtok( NULL,"|" );         
+    }    
+    printf("Next IP address to be sent to : %s", p);
+    return p;
+}
+
+/*
+    Retrieves the Multicast address and port number from the string. 
+*/
+int retrieveMulticastIpAddress( char * IPaddress_list )
+{
+    int i;
+    char * p,* prev, * port;
+
+    p = strtok( IPaddress_list,"|" );
+
+    while( p != NULL )
+    {
+        prev = p;
+        p = strtok( NULL,"|" );         
+    }    
+    p = strtok(prev,":");
+    port = atoi( strtok(NULL, ":") );
+
+    printf("Multicast Address to  : %s\n", prev);
+    printf("Port number : %d\n", port );
+    return 1;
+}
+
+void sendTourPacket( int sockfd, struct payload * p, char * destination_address, char * source_address )
+{
+    struct ip       *ip;
+    char            sendbuf[BUFSIZE];
+    size_t          len;
+    socklen_t       servlen;
+    struct sockaddr servaddr;
+
+    /* Pointer to beginning of payload */
+    char * data = sendbuf+20; 
+  
+    ip = (struct ip *) sendbuf;     /* start of IP header */
+    ip->ip_p = htons(IPPROTO_ICMP);
+    ip->ip_id = htons(IDENTIFIER);
+    ip->ip_sum = htons(0);
+    inet_aton(source_address, ip->ip_src);
+    inet_aton(destination_address, ip->ip_dst);
+        
+    memcpy( (void *)data,(void *)p,sizeof(*p) ); 
+    len = sizeof(sendbuf);
+
+    bzero( &servaddr, sizeof( servaddr ) );
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons( 61616 );
+    inet_pton( AF_INET, destination_address, &servaddr.sin_addr );
+    
+    servlen = sizeof(servaddr);
+
+    Sendto(sockfd, sendbuf, len, 0, &servaddr, servlen);
 
 }
 
@@ -345,27 +429,46 @@ void sendPingPacket( int s , struct icmp * populated_icmp_frame , char * source_
     printf("Done sending..WOO\n");
 }
 
+void recievePacketFromRTSock(int rt_sock)
+{
+    struct sockaddr rtaddr;
+    int rtlen;
+    rtlen = sizeof( struct sockaddr );    
+    void* buffer = (void*)malloc(BUFSIZE); 
 
+    if((n=recvfrom(rt_sock,buffer, BUFSIZE, 0, &rtaddr, &rtlen)>0))
+    {
+        printf("Recieved %d bytes from whoever..\n",n );
+    } 
+    return;   
+}
 
+void recievePacketFromPGSock(int pg_sock)
+{
+    struct sockaddr pgaddr;
+    int pglen;
+    pglen = sizeof( struct sockaddr );    
+    void* buffer = (void*)malloc(BUFSIZE); 
 
+    if((n=recvfrom(pg_sock,buffer, BUFSIZE, 0, &pgaddr, &pglen)>0))
+    {
+        printf("Recieved %d bytes from whoever..\n",n );
+    } 
+    return;   
+}
 
 int main(int argc, char const *argv[])
 {
-    int   rt_sock,  iptour_return;
+    int   rt_sock,  iptour_return, maxfd;
     const int   on = 1;
     char IPaddress_list[MAX_PAYLOAD_SIZE], IPmulticast_address[INET_ADDRSTRLEN] = "239.108.175.37", host[INET_ADDRSTRLEN];
     int port_number = 17537;
+    fd_set          rset;
     int             c;
     struct addrinfo *ai;
     char *h;
     int datalen = 56;
-    if( createIPTourString(IPaddress_list, argv, IPmulticast_address, port_number) == -1 )
-    {
-        printf("Error : Same node should not appear consequentively in the tour list..Exiting..\n");
-        exit(1);
-    }    
-    else
-        printf("\nIP Tour List : %s\n",IPaddress_list);
+    struct payload * p;
 
 
     if((packet_socket = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_IP) ) )==-1)
@@ -391,14 +494,71 @@ int main(int argc, char const *argv[])
     }
 
     /* Setting the socket options to IP_HDRINCL */ 
-    if( setsockopt( rt_sock, SOL_SOCKET, IP_HDRINCL, &on, sizeof(on)) == -1 )
+    if( setsockopt( rt_sock, IPPROTO_IP, IP_HDRINCL, &on, sizeof(on)) == -1 )
     {
         printf("Unable to set socket to SO_REUSEADDR. Error code : %d\nExiting..\n", errno );
     }       
+    
+    if( argc > 1 )
+    {    
+        if( createIPTourString(IPaddress_list, argv, IPmulticast_address, port_number) == -1 )
+        {
+            printf("Error : Same node should not appear consequentively in the tour list..Exiting..\n");
+            exit(1);
+        }    
+        else
+            printf("\nIP Tour List : %s\n",IPaddress_list);
+        
+        p = createPayload( IPaddress_list );
+        sendTourPacket( rt_sock, p, char * destination_address, char * source_address );
 
+    }    
+
+    printf("DONE SENDINGS WOOOO.\n");
+    exit(0); 
+       
     printf("<time>   received source routing packet from <hostname>.\n");
 
+    FD_ZERO( &rset );
+    maxfd = max( packet_socket, rt_sock );
+    maxfd = max( maxfd, pg_sock ) + 1;
 
+    for ( ; ; ) 
+    {
+            FD_SET( packet_socket, &rset );
+            FD_SET( rt_sock, &rset );
+            FD_SET( pg_sock, &rset );
+
+            if( ( nready = select( maxfd, &rset, NULL, NULL, NULL ) ) < 0 )
+            {
+                    if( errno == EINTR )
+                    {
+                            fputs("Encountered EINTR.. retrying..\n", stdout);
+                            continue;
+                    }       
+                    else
+                    {
+                            fputs("Select call failed..Exiting..\n", stdout);
+                            exit(1);
+                    }
+            }       
+
+            if ( FD_ISSET(packet_socket, &rset)  ) 
+            {
+               printf("What the crap is this shit doing here ? \n");     
+            }
+            else if( FD_ISSET(rt_sock, &rset) )
+            {
+                printf("Recieving packet from rt_sock..\n");
+                recievePacketFromRTSock(rt_sock);
+            }   
+            else if( FD_ISSET(pg_sock, &rset) )
+            {
+                printf("Recieving packet from pg_sock..\n");
+                recievePacketFromPGSock(pg_sock);
+            } 
+
+    }
 
     //pinging**************************
     

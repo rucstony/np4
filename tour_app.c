@@ -46,6 +46,13 @@ int retrieveDestinationCanonicalIpPresentationFormat(const char *server_vm, char
   }
 }
 
+struct tour_payload
+{
+    char IPaddress_list[1496];
+
+
+};
+
 /*
     Stores the IP addresses of the vm-tour in a comma-separated string to be passed as payload to the tour-members.
 */
@@ -80,6 +87,21 @@ int createIPTourString( char * IPaddress_list, char *argv[] )
 struct ip * createIPPacket()
 {
 
+}
+
+char * retrieveNextTourIpAddress( char * IPaddress_list, int last_visited_index )
+{
+    int i;
+    char * p;
+    p = strtok( IPaddress_list,"|" );
+
+    for(i=0;i<last_visited_index;i++)
+    {
+        p = strtok( NULL,"|" );         
+    }    
+    printf("Next IP address to be sent to : %s", p);
+
+    return p;
 }
 
 

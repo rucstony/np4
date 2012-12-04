@@ -33,7 +33,7 @@ FLAGS = -w -g -O2
 CFLAGS = ${FLAGS} -I/home/users/cse533/Stevens/unpv13e/lib
 
 
-all: arp
+all: arp tour_app
 #	get_hw_addrs.o prhwaddrs.o ${CC} -o prhwaddrs prhwaddrs.o get_hw_addrs.o ${LIBS}
 
 #app_functions.o: app_functions.c
@@ -50,7 +50,10 @@ arp: arp.o get_hw_addrs.o arp_api.o
 arp.o: arp.c
 	${CC} ${CFLAGS} -c arp.c
 
-
+tour_app: tour_app.o get_hw_addrs.o arp_api.o
+	${CC} ${FLAGS} -o tour_app tour_app.o get_hw_addrs.o arp_api.o ${LIBS}
+tour_app.o: tour_app.c
+	${CC} ${CFLAGS} -c tour_app.c
 
 	
 clean:

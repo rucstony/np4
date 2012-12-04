@@ -1,35 +1,21 @@
 #include  "unp.h"
 #include <netinet/ip.h>
 #include    "ping.h"
-#define IDENTIFIER 17537
+#include "hw_addrs.h"
+#include <linux/if_ether.h>
+#include <linux/if_arp.h>
+#define ETH_FRAME_LEN 1514
+#define IDENTIFIER 72217
 #define MAX_PAYLOAD_SIZE 1500
-#define IPPROTO_USID    537    
+#define USID_PROTO 0x4481  
 #define HOSTNAME_LEN 255
 
-#define TOUR_PAYLOAD 1480
-#define BUFSIZE 1500
-#define IDENTIFICATION 17537
+struct proto proto_v4 = { proc_v4, send_v4, NULL, NULL, NULL, 0, IPPROTO_ICMP };
+int pg_sock, packet_socket, if_index ;
+char  source_hw_mac_address[6], destination_hw_mac_address[6], source_ip_address[INET_ADDRSTRLEN], destination_ip_address[INET_ADDRSTRLEN];
 
 
-//struct proto    proto_v4 = { proc_v4, send_v4, NULL, NULL, NULL, 0, IPPROTO_ICMP };
-int packet_socket, if_index ;
-char  source_hw_mac_address[6], destination_hw_mac_address[6], source_ip_address[INET_ADDRSTRLEN], destination_ip_address[INET_ADDRSTRLEN])
-  
-struct proto {
-  struct sockaddr  *sasend; /* sockaddr{} for send, from getaddrinfo */
-  struct sockaddr  *sarecv; /* sockaddr{} for receiving */
-  socklen_t     salen;      /* length of sockaddr{}s */
-  int           icmpproto;  /* IPPROTO_xxx value for ICMP */
-} *pr;
-
-
-struct payload
-{
-    char IPaddress_list[MAX_PAYLOAD_SIZE];
-    int last_visited_index;
-};
-
-void readloop(int sockfd)
+void readloop()
 {
     int             size;
     char            recvbuf[BUFSIZE];
@@ -41,7 +27,7 @@ void readloop(int sockfd)
 
 
     size = 60 * 1024;       /* OK if setsockopt fails */
-    setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+    setsockopt(pg_sock, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
 
     sig_alrm(SIGALRM);      /* send first packet */
 
@@ -54,7 +40,7 @@ void readloop(int sockfd)
     for ( ; ; ) {
         msg.msg_namelen = pr->salen;
         msg.msg_controllen = sizeof(controlbuf);
-        n = recvmsg(sockfd, &msg, 0);
+        n = recvmsg(pg_sock, &msg, 0);
         if (n < 0) {
             if (errno == EINTR)
                 continue;
@@ -121,7 +107,7 @@ void send_v4(void)
     len = 8 + datalen;      /* checksum ICMP header and data */
    // icmp->icmp_cksum = 0;
    // icmp->icmp_cksum = in_cksum((u_short *) icmp, len);
-    sendPingPacket( packet_socket ,icmp, source_hw_mac_address, destination_hw_mac_address , if_index , source_ip_address, destination_ip_address)
+    sendPingPacket( packet_socket ,icmp, source_hw_mac_address, destination_hw_mac_address , if_index , source_ip_address, destination_ip_address);
 
     //Sendto(sockfd, sendbuf, len, 0, pr->sasend, pr->salen);
 }
@@ -176,18 +162,10 @@ int retrieveDestinationCanonicalIpPresentationFormat(const char *server_vm, char
   }
 }
 
-struct payload * createPayload( char * IPaddress_list )
-{
-    struct payload * p = (struct payload *)malloc( sizeof(struct payload) );
-    strcpy(p->IPaddress_list, IPaddress_list);
-    p->last_visited_index = 0;
-    return p;
-}
-
 /*
     Stores the IP addresses of the vm-tour in a comma-separated string to be passed as payload to the tour-members.
 */
-int createIPTourString( char * IPaddress_list, char *argv[] )
+int createIPTourString( char * IPaddress_list, char *argv[], char * IPmulticast_address, int port)
 {
     int i;
     char IPaddress[INET_ADDRSTRLEN], own_vm_name[HOSTNAME_LEN];
@@ -215,105 +193,8 @@ int createIPTourString( char * IPaddress_list, char *argv[] )
     return 1;
 }
 
-
-/*
-    
-The definition of struct ip_mreq is as follows:
-
-    struct ip_mreq 
-    {
-        struct in_addr imr_multiaddr; 
-        struct in_addr imr_interface; 
-    }
-*/
-int joinMulticastGroup( int sock, char * multicast_ip_address, char * joining_local_interface_ip_address )
+struct ip * createIPPacket()
 {
-    struct ip_mreq mreq;
-    mreq.imr_multiaddr.s_addr =  inet_addr( multicast_ip_address );
-    mreq.imr_interface.s_addr = inet_addr( joining_local_interface_ip_address );
- 
-    if( setsockopt(sock,IPPROTO_IP,IP_ADD_MEMBERSHIP,&mreq,sizeof(mreq)) == -1 )
-    {
-        printf("Unable to join multicast group.. Error code : %d\n", errno );
-        return  0;
-    }       
-
-    return 1;
-}
-
-
-/*
-    last_visited_index = 0 when starting from source. 
-        incremented when at each node of the tour. 
-*/
-char * retrieveNextTourIpAddress( char * IPaddress_list, int last_visited_index )
-{
-    int i;
-    char * p;
-
-    p = strtok( IPaddress_list,"|" );
-
-    for(i=0;i<=last_visited_index;i++)
-    {
-        printf("%s\n",p );
-        p = strtok( NULL,"|" );         
-    }    
-    printf("Next IP address to be sent to : %s", p);
-    return p;
-}
-
-/*
-    Retrieves the Multicast address and port number from the string. 
-*/
-int retrieveMulticastIpAddress( char * IPaddress_list )
-{
-    int i;
-    char * p,* prev, * port;
-
-    p = strtok( IPaddress_list,"|" );
-
-    while( p != NULL )
-    {
-        prev = p;
-        p = strtok( NULL,"|" );         
-    }    
-    p = strtok(prev,":");
-    port = atoi( strtok(NULL, ":") );
-
-    printf("Multicast Address to  : %s\n", prev);
-    printf("Port number : %d\n", port );
-    return 1;
-}
-
-void sendTourPacket( int sockfd, struct payload * p, char * destination_address, char * source_address )
-{
-    struct ip       *ip;
-    char            sendbuf[BUFSIZE];
-    size_t          len;
-    socklen_t       servlen;
-    struct sockaddr servaddr;
-
-    /* Pointer to beginning of payload */
-    char * data = sendbuf+20; 
-  
-    ip = (struct ip *) sendbuf;     /* start of IP header */
-    ip->ip_p = htons(IPPROTO_ICMP);
-    ip->ip_id = htons(IDENTIFIER);
-    ip->ip_sum = htons(0);
-    inet_aton(source_address, ip->ip_src);
-    inet_aton(destination_address, ip->ip_dst);
-        
-    memcpy( (void *)data,(void *)p,sizeof(*p) ); 
-    len = sizeof(sendbuf);
-
-    bzero( &servaddr, sizeof( servaddr ) );
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_port = htons( 61616 );
-    inet_pton( AF_INET, destination_address, &servaddr.sin_addr );
-    
-    servlen = sizeof(servaddr);
-
-    Sendto(sockfd, sendbuf, len, 0, &servaddr, servlen);
 
 }
 
@@ -451,8 +332,8 @@ void sendPingPacket( int s , struct icmp * populated_icmp_frame , char * source_
     iph->ip_p=htons(IPPROTO_ICMP);
     iph->ip_hl=htons(20);
     iph->ip_sum=htons(0);
-    inet_aton(source_ip_address, ip->ip_src);
-    inet_aton(destination_ip_address, ip->ip_dst);
+    inet_aton(source_ip_address, &iph->ip_src);
+    inet_aton(destination_ip_address, &iph->ip_dst);
     /*fill the frame with some datip_src,a*/
     memcpy((void*)data,(void*)populated_icmp_frame, sizeof( struct icmp ));
 
@@ -470,7 +351,7 @@ void sendPingPacket( int s , struct icmp * populated_icmp_frame , char * source_
 
 int main(int argc, char const *argv[])
 {
-    int   rt_sock, pg_sock, iptour_return;
+    int   rt_sock,  iptour_return;
     const int   on = 1;
     char IPaddress_list[MAX_PAYLOAD_SIZE], IPmulticast_address[INET_ADDRSTRLEN] = "239.108.175.37", host[INET_ADDRSTRLEN];
     int port_number = 17537;
@@ -478,7 +359,14 @@ int main(int argc, char const *argv[])
     struct addrinfo *ai;
     char *h;
     int datalen = 56;
-    struct payload * p;
+    if( createIPTourString(IPaddress_list, argv, IPmulticast_address, port_number) == -1 )
+    {
+        printf("Error : Same node should not appear consequentively in the tour list..Exiting..\n");
+        exit(1);
+    }    
+    else
+        printf("\nIP Tour List : %s\n",IPaddress_list);
+
 
     if((packet_socket = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_IP) ) )==-1)
     {
@@ -503,29 +391,11 @@ int main(int argc, char const *argv[])
     }
 
     /* Setting the socket options to IP_HDRINCL */ 
-    if( setsockopt( rt_sock, IPPROTO_IP, IP_HDRINCL, &on, sizeof(on)) == -1 )
+    if( setsockopt( rt_sock, SOL_SOCKET, IP_HDRINCL, &on, sizeof(on)) == -1 )
     {
         printf("Unable to set socket to SO_REUSEADDR. Error code : %d\nExiting..\n", errno );
     }       
-    
-    if( argc > 1 )
-    {    
-        if( createIPTourString(IPaddress_list, argv, IPmulticast_address, port_number) == -1 )
-        {
-            printf("Error : Same node should not appear consequentively in the tour list..Exiting..\n");
-            exit(1);
-        }    
-        else
-            printf("\nIP Tour List : %s\n",IPaddress_list);
-        
-        p = createPayload( IPaddress_list );
-        sendTourPacket( rt_sock, p, char * destination_address, char * source_address );
 
-    }    
-
-    printf("DONE SENDINGS WOOOO.\n");
-    exit(0); 
-       
     printf("<time>   received source routing packet from <hostname>.\n");
 
 
@@ -533,7 +403,7 @@ int main(int argc, char const *argv[])
     //pinging**************************
     
 
-    host = "192.168.1.101";
+   strcpy(host, "192.168.1.101");
 
     pid = IDENTIFIER & 0xffff;  /* ICMP ID field is 16 bits */
     Signal(SIGALRM, sig_alrm);

@@ -538,12 +538,12 @@ int main(int argc, char const *argv[])
     printf("<time>   received source routing packet from <hostname>.\n");
 
     FD_ZERO( &rset );
-    maxfd = max( packet_socket, rt_sock );
-    maxfd = max( maxfd, pg_sock ) + 1;
+    maxfd = max( pg_sock, rt_sock );
+   // maxfd = max( maxfd, pg_sock ) + 1;
 
     for ( ; ; ) 
     {
-            FD_SET( packet_socket, &rset );
+         //   FD_SET( packet_socket, &rset );
             FD_SET( rt_sock, &rset );
             FD_SET( pg_sock, &rset );
 
@@ -561,10 +561,10 @@ int main(int argc, char const *argv[])
                     }
             }       
 
-            if ( FD_ISSET(packet_socket, &rset)  ) 
-            {
-               printf("What the crap is this shit doing here ? \n");     
-            }
+ //           if ( FD_ISSET(packet_socket, &rset)  ) 
+   //         {
+     //          printf("What the crap is this shit doing here ? \n");     
+       //     }
             else if( FD_ISSET(rt_sock, &rset) )
             {
                 printf("Recieving packet from rt_sock..\n");

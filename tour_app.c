@@ -525,24 +525,26 @@ void updateLastVisitedIndex()
 /*
     Process the recieved packet. Convert to HBO and return the packet.
 */
-struct odr_frame * preprocessPacket(void * str_from_sock)
+void preprocessPacket(void * str_from_sock)
 {
     //unsigned char sendbuf[BUFSIZE];
     void* buffer = (void*)malloc(BUFSIZE);    /*buffer for ethernet frame*/
 
-    char * payload;
+    char payload;
     unsigned char* iphead = sendbuf;
     unsigned char * data = sendbuf+20; 
+    struct payload * pyld = (struct payload *) data;  
+
     struct iphdr *ip_pkt;
 
     struct ip *iph = (struct ip *) iphead;  
 
     memcpy((void*)buffer, (void*)str_from_sock, BUFSIZE ); 
-    payload = (char *)data;               
+//    payload = (char *)data;               
 
-    printf("Recieved payload : %s\n", payload);
+    printf("Recieved payload : %s\n", pyld->IPaddress_list);
 
-
+    return;
 
 
 /*

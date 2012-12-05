@@ -328,6 +328,7 @@ void sendTourPacket( int sockfd, struct payload * p, char * destination_address,
     //memcpy((void *)&iph->ip_dst,(void *)&ip_dst,sizeof(struct in_addr));
    // inet_pton(AF_INET, destination_address, (struct in_addr *)&daddr.sin_addr.s_addr);
     printf("size of payload: %d\n", sizeof(struct payload));        
+     printf("size of payload: %s\n", p->IPaddress_list);       
     memcpy( (void *)data,(void *)p,sizeof(struct payload) ); 
    // len = sizeof(*sendbuf);
 
@@ -530,19 +531,24 @@ void preprocessPacket(void * str_from_sock)
     //unsigned char sendbuf[BUFSIZE];
     void* buffer = (void*)malloc(BUFSIZE);    /*buffer for ethernet frame*/
 
-    char payload;
-    unsigned char* iphead = sendbuf;
-    unsigned char * data = sendbuf+20; 
-    struct payload * pyld = (struct payload *) data;  
+    char str[MAX_PAYLOAD_SIZE];
+    int n;
+    unsigned char* iphead = buffer;
+    unsigned char * data = buffer+sizeof(struct iphdr); 
+    struct payload * pyld;  
 
     struct iphdr *ip_pkt;
 
-    struct ip *iph = (struct ip *) iphead;  
-
+    struct iphdr *iph = (struct iphdr *) iphead;  
+    memset(buffer,  0,BUFSIZE);
     memcpy((void*)buffer, (void*)str_from_sock, BUFSIZE ); 
+    pyld = (struct payload *) data;
 //    payload = (char *)data;               
+    n=strlen(pyld->IPaddress_list);
+    strcpy(str,(char *)pyld->IPaddress_list);
 
-    printf("Recieved payload : %s\n", pyld->IPaddress_list);
+    printf("Recieved payload : %s\n",str);
+    printf("Recieved payload index : %d\n",pyld->last_visited_index);
 
     return;
 

@@ -214,7 +214,7 @@ struct payload * createPayload( char * IPaddress_list )
 {
     struct payload * p = (struct payload *)malloc( sizeof(struct payload) );
     strcpy(p->IPaddress_list, IPaddress_list);
-    p->last_visited_index = 0;
+    p->last_visited_index = htons(0);
     return p;
 }
 
@@ -228,16 +228,16 @@ char * retrieveNextTourIpAddress( char * IPaddress_list, int last_visited_index 
     char * p;
 
     p = strtok( IPaddress_list,"|" );
- //   if( last_visited_index == -1 )
-  //  {
-   //     return p;
-   // }    
+    if( last_visited_index == -1 )
+    {
+        return p;
+    }    
     for(i=0;i<=last_visited_index;i++)
     {
         printf("%s\n",p );
         p = strtok( NULL,"|" );         
     }    
-    printf("Next IP address to be sent to : %s\n", p);
+   // printf("Next IP address to be sent to : %s\n", p);
     return p;
 }
 
@@ -526,7 +526,7 @@ void updateLastVisitedIndex()
 /*
     Process the recieved packet. Convert to HBO and return the packet.
 */
-void preprocessPacket(void * str_from_sock)
+struct payload * preprocessPacket(void * str_from_sock)
 {
     //unsigned char sendbuf[BUFSIZE];
     void* buffer = (void*)malloc(BUFSIZE);    /*buffer for ethernet frame*/
@@ -541,16 +541,19 @@ void preprocessPacket(void * str_from_sock)
 
     struct iphdr *iph = (struct iphdr *) iphead;  
     memset(buffer,  0,BUFSIZE);
+
     memcpy((void*)buffer, (void*)str_from_sock, BUFSIZE ); 
     pyld = (struct payload *) data;
+
 //    payload = (char *)data;               
+
     n=strlen(pyld->IPaddress_list);
     strcpy(str,(char *)pyld->IPaddress_list);
-
+    pyld->last_visited_index = ntohs( pyld->last_visited_index );
     printf("Recieved payload : %s\n",str);
     printf("Recieved payload index : %d\n",pyld->last_visited_index);
 
-    return;
+    return pyld;
 
 
 /*
@@ -579,6 +582,14 @@ void preprocessPacket(void * str_from_sock)
 
 }
 
+char * retrievePredecessorNodeIPaddress( struct payload * processed_received_payload )
+{
+    /* The predecessor can be obtained by returning the 'NextTourIPaddress using last_visited_index -1 .. wooo' */
+    char IPaddress[INET_ADDRSTRLEN];
+
+    IPaddress = retrieveNextTourIpAddress( processed_received_payload->IPaddress_list, processed_received_payload->last_visited_index - 1  );
+    return IPaddress;
+}
 
 void recievePacketFromRTSock(int rt_sock)
 {
@@ -586,15 +597,36 @@ void recievePacketFromRTSock(int rt_sock)
     char source_address[INET_ADDRSTRLEN], hostname[HOSTNAME_LEN];
     int rtlen, n;
     time_t ticks;
+    struct sockaddr_in pgaddr;
+    int pglen;        
+    struct hwaddr HWaddr;
     void* buffer = (void*)malloc(BUFSIZE); 
     rtlen = sizeof( struct sockaddr );    
-
+    struct payload * processed_recieved_payload; 
+    char predecessorIPaddress[INET_ADDRSTRLEN];
 
     if((n=recvfrom(rt_sock,buffer, BUFSIZE, 0, &rtaddr, &rtlen)>0))
     {
         printf("Recieved %d bytes from whoever..\n",n );
      
-        preprocessPacket(buffer);
+        processed_recieved_payload = preprocessPacket(buffer);
+        predecessorIPaddress = retrievePredecessorNodeIPaddress( processed_received_payload );
+        printf("Predecessor IP (Must ping to this address): %s \n",predecessorIPaddress );    
+        
+        bzero( &pgaddr, sizeof( pgaddr ) );
+        pgaddr.sin_family = AF_INET;
+        pgaddr.sin_port = htons( 0 );
+
+        inet_pton( AF_INET, predecessorIPaddress,(struct in_addr *) &pgaddr.sin_addr);
+
+        pglen = sizeof(pgaddr);
+
+        HWaddr.sll_ifindex = 1;
+        HWaddr.sll_hatype = ARPHRD_ETHER;
+        HWaddr.sll_halen = 6;
+
+        areq ((struct sockaddr *)pgaddr, pglen, &HWaddr);
+
        /* 
         checkIfIdentifierValid();
         retrieveHostName( source_address, hostname );

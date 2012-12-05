@@ -9,6 +9,7 @@
 #define USID_PROTO 0x4481
 #define UNIXDG_PATH "testpath"
 #define ETH_FRAME_LEN 1514
+#define IDENTIFIER 72217
 
 char own_ip_address[INET_ADDRSTRLEN];
 struct arp_frame
@@ -20,14 +21,14 @@ struct arp_frame
 	uint8_t proto_size;
 	uint16_t op;
 	char sender_ethernet_address[6];
-	char sender_ip_address[4];
+	char sender_ip_address[INET_ADDRSTRLEN];
 	char target_ethernet_address[6];
-	char target_ip_address[4];
+	char target_ip_address[INET_ADDRSTRLEN];
 };
 
 struct IP_hw_address_mpg
 {
-	char ip_address[100];
+	char ip_address[INET_ADDRSTRLEN];
 	char hw_address[6];
 	int sll_ifindex;
 	unsigned short sll_hatype;
@@ -279,27 +280,46 @@ void insert_to_cache( char * ip_address,char * hw_address, int if_index, char * 
 {
 
     struct IP_hw_address_mpg *node = (struct IP_hw_address_mpg *)malloc( sizeof(struct IP_hw_address_mpg) );
-	
+	printf("Failed..1\n");
+
+	memset(node,0,sizeof(struct IP_hw_address_mpg));
     strcpy( node->ip_address, ip_address );
-    if(hw_address!=NULL)
+	printf("Failed..2\n");
+ 
+    if( strcmp(hw_address,"") != 0 )
     {
+    	printf("Before memcpy in hw_add!=NULL if\n");
     	memcpy( node->hw_address, hw_address, 6 );
     }
+ 
+ 	printf("Here..1\n");
     node->sll_ifindex =  if_index ;
-    memcpy( (void *)node->sll_hatype, (void *) hatype, 1 );
+ 	printf("Here..2\n");
+
+//    memcpy( (void *)node->sll_hatype, (void *) hatype, sizeof(unsigned short) );
+    node->sll_hatype = (unsigned short)atoi(hatype);
+	printf("Here..3\n");
+
 	node->unix_domain_confd =  connfd ;
+ 	printf("Here..\n");
     if( rt_head == NULL )
     {
+ 	printf("1..\n");
+
       rt_head = node;
       rt_head->next = NULL;			
     } 
     else if( rt_head->next == NULL )
     {
+ 	printf("2..\n");
+
       rt_head->next = node;
       node->next = NULL;			
     } 
     else
     {
+ 	printf("3..\n");
+
       rt_tmp = rt_head->next;       
       rt_head->next = node;
       node->next = rt_tmp;            
@@ -318,15 +338,17 @@ struct IP_hw_address_mpg * get_ethernet_from_ip( char * ip_address,char * hw_add
 	node = rt_head;
 	while( node != NULL )
 	{
+		printf("searching\n");
 		if( (strcmp( node->ip_address, ip_address ) == 0) && (node->sll_ifindex== if_index ) && (node->sll_hatype== hatype ))
 		{
 			//retrieveHostName( node->destination_canonical_ip_address , h_name);
-
+			printf("obtained %s in cache..\n", ip_address);
 			return node;
 		}	
 		
 		node = node->next;
 	}
+	printf("returning null");
 	return NULL;	
 }
 struct IP_hw_address_mpg * get_cache_entry_from_IP( char * ip_address )
@@ -452,20 +474,32 @@ void getOwnCanonicalIPAddress(char* own_canonical_ip_address)
 }
 struct arp_frame * create_arp( char * target_ip_address, uint16_t op)
 {
-	struct arp_frame * arp_req;
+	
+	struct arp_frame * arp_req= (struct arp_frame *)malloc( sizeof(struct arp_frame) );
 	char own_canonical_ip_address[INET_ADDRSTRLEN];
-	arp_req-> id = htons(USID_PROTO);	
-	arp_req-> hard_type=htons(1);
-	arp_req-> proto_type=0x0800;
+
+	printf("creating arp\n");
+	memset(arp_req,0,sizeof(struct arp_frame));
+		printf("1--\n");
+	printf("1\n");
+	arp_req-> hard_type=1;
+	printf("2\n");
+	arp_req-> proto_type=htons(USID_PROTO);
+	printf("3\n");
 	arp_req-> hard_size=htons(6);
+	printf("4\n");
 	arp_req-> proto_size=htons(4);
+	printf("5\n");
 	arp_req-> op=htons(op);
 
 	//getOwnCanonicalIPAddress(own_canonical_ip_address);
 	//memcpy(arp_req-> sender_ethernet_address, sender_ethernet_address, 6);
-	strcpy(arp_req-> sender_ip_address,own_ip_address);
+	printf("own_ip_address: %s\n",own_ip_address );
+	strcpy(arp_req->sender_ip_address, own_ip_address);
 	//memcpy(arp_req-> target_ethernet_address,target_ethernet_address, 6);
-	strcpy(arp_req-> target_ip_address,target_ip_address);
+	printf("target_ip_address: %s\n", target_ip_address );
+	strcpy(arp_req->target_ip_address, target_ip_address);
+	printf("created arp\n");
 	return arp_req;
 }
 
@@ -476,25 +510,28 @@ void floodARP( int pf_socket, char * target_ip_address)
 	unsigned char flood_mac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 	struct arp_frame * populated_arp;
+	printf("inside flood arp\n");
 	populated_arp =  create_arp(target_ip_address, 1);
+		printf("populated_arp filled\n");
 	//printf("At floodRREQ, size of frame was : %d\n",sizeof(*populated_odr_frame)  );
 	/* Flood with broadcast address on all interfaces except eth0 and lo and recieved interface */
 
 	for (hwahead = hwa = Get_hw_addrs(); hwa != NULL; hwa = hwa->hwa_next) 
 	{
+		printf("get hw addrss loop\n");
 		ifname_split = strtok(hwa->if_name, ":"); //get pointer to first token found and store in 0
 	
 		if( strcmp(ifname_split, "eth0")!=0
 			&& strcmp(hwa->if_name,"lo")!=0
 			 )
 		{	
-			//printf("Entering SendODR..\n");
+			printf("Entering sendARPframe..\n");
 			sendARPframe(pf_socket, populated_arp, hwa->if_haddr, flood_mac, hwa->if_index);
 			//printf("Leaving SendODR..\n");
 
 		}
 	}	
-	//printf("Leaving the FloodRREQ..\n");
+	printf("Leaving the FloodARP..\n");
 	return;
 }
 void sendARPResponse( int pf_socket, char * target_ip_address,char * target_hw_address, int sll_ifindex )
@@ -605,12 +642,17 @@ int main(int argc, char const *argv[])
             exit(1);
     }
 
-	printf("socket bound : %d\n", unix_domain_socket);
+	/*printf("listening on : %d\n", unix_domain_socket);
+	unixarplen=sizeof(unixarpaddr);
+	connfd = accept(unix_domain_socket, (struct sockaddr_un *) &unixarpaddr, &unixarplen);
+	printf("accepted : %d\n", unix_domain_socket);*/
 	FD_ZERO(&allset);
+	//FD_SET(connfd, &allset);
 	FD_SET(unix_domain_socket, &allset);
 	FD_SET(pf_socket, &allset);
 	maxfdp=max(unix_domain_socket,pf_socket)+1;
 	/* end fig01 */
+
 
 	/* include fig02 */
 	for ( ; ; ) 
@@ -628,8 +670,9 @@ int main(int argc, char const *argv[])
 		{	
 			
         	unixarplen=sizeof(unixarpaddr);
-	        if((connfd = accept(unix_domain_socket, (SA *) &unixarpaddr, &unixarplen))<0)
+	        if((connfd = accept(unix_domain_socket, (struct sockaddr_un *) &unixarpaddr, &unixarplen))>=0)
 	        {
+	        	printf("new conn recieved\n");
 	        	 if ( (n = readline(connfd, unix_buffer, MAXLINE)) > 0)
 				{          
 	        	//(n=recvfrom(unix_domain_socket,unix_buffer, ETH_FRAME_LEN+1, 0, &unixarpaddr, &unixarplen)>0)
@@ -647,10 +690,12 @@ int main(int argc, char const *argv[])
           
                    		 printf("%s\n", msg_fields[j]); /* print out all of the tokens */
                 	}
- 
+ 					//memset(entry_from_cache,0,sizeof(struct IP_hw_address_mpg));
+ 					printf("check in cache\n");
                 	entry_from_cache=get_ethernet_from_ip(msg_fields[0],NULL,msg_fields[1],msg_fields[2],connfd);
                		//get_ethernet_from_ip( char * ip_address,char * hw_address, char * if_index, char * hatype, int connfd )
-			        if(entry_from_cache->hw_address!=NULL)
+			        printf("out of cache\n");
+			        if(entry_from_cache!=NULL && entry_from_cache->hw_address!=NULL)
 			        {
 			        	printf("hw address obtained from cache\n");
 			        	writen(connfd,entry_from_cache->hw_address, strlen(entry_from_cache->hw_address));
@@ -669,7 +714,8 @@ int main(int argc, char const *argv[])
 			        	printf("hw address NOT obtained from cache\n");
 			        	floodARP(pf_socket,msg_fields[0]/*target ip address*/ );
 			        	printf("ARP request sent on pf_socket\n");
-			        	insert_to_cache( msg_fields[0],NULL, msg_fields[1],msg_fields[2],connfd );
+			        	
+			        	insert_to_cache( msg_fields[0],"", msg_fields[1],msg_fields[2],connfd );
 			        	//void insert_to_cache( char * ip_address,char * hw_address, int if_index, char * hatype, int connfd )
 
 			        	FD_SET(connfd, &rset);
@@ -684,6 +730,8 @@ int main(int argc, char const *argv[])
 
 
 	      
+			}else{
+				perror("connect");
 			}
 //---------------------------------------------------------------------------------------------------------
 		}
@@ -771,6 +819,7 @@ int main(int argc, char const *argv[])
         }
         else if(FD_ISSET(connfd, &rset))
         {
+        	printf("connfd readable\n");
         	n = readline(connfd, str, MAXLINE);
         	if ( n == 0)
 			{ 

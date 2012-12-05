@@ -51,7 +51,7 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
    // inet_ntop( AF_INET, (IPaddr->sin_addr), ip_address, INET_ADDRSTRLEN );
 
     printf("areq() called for IP address: %s\n",ip_address );
-    sprintf(output_to_sock,"%s|%d|%hu|%c\n", ip_address, 
+    sprintf(output_to_sock,"%s|%d|%hu|%u\n", ip_address, 
                                           HWaddr->sll_ifindex,
                                           HWaddr->sll_hatype,
                                           HWaddr->sll_halen);

@@ -17,10 +17,10 @@ static void arp_receive_timeout(int signo)
 }
 int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 {
-    int unix_domain_socket, send_result, replen, n, ihw, khw;
+    int unix_domain_socket, send_result, replen, n, ihw, khw, len;
     struct sockaddr_un unixaddr, repaddr;
     char *ip_address, str_from_sock[MAXLINE], output_to_sock[MAXLINE], node_ethernet_address[MAXLINE];
-    if((unix_domain_socket = socket(AF_LOCAL, SOCK_STREAM, 0))==-1)
+    if((unix_domain_socket = socket(AF_UNIX, SOCK_STREAM, 0))==-1)
     {
         printf("Error in creation of Unix Domain socket\n");
         perror("socket");
@@ -28,13 +28,19 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
         
     }
 
-    unlink(UNIXDG_PATH);
+   
     bzero(&unixaddr, sizeof(unixaddr));
-    unixaddr.sun_family = AF_LOCAL;
+    unixaddr.sun_family = AF_UNIX;
     strcpy(unixaddr.sun_path, UNIXDG_PATH);
-    
-    if(connect(unix_domain_socket, (SA *) &unixaddr, SUN_LEN(&unixaddr))<0)
-    {       fprintf(stderr,"connect() failed. errorno =  %d\n",errno); 
+
+    // unlink(UNIXDG_PATH);
+    printf("sun path: %s\n",unixaddr.sun_path);
+       len = strlen(unixaddr.sun_path) + sizeof(unixaddr.sun_family);
+
+
+    printf("bound %d\n",unix_domain_socket);
+    if(connect(unix_domain_socket, (struct sockaddr_un *) &unixaddr, len)<0)
+    {     perror("connect");
             exit(1);
     }
 

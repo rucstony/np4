@@ -518,7 +518,7 @@ int main(int argc, char const *argv[])
 		char *msg_fields[MAXLINE], str[MAXLINE];
 		struct hwa_info	*hwa, *hwahead;
 		char * ifname_split;
-		int i, prflag, k, pf_socket, unix_domain_socket, arplen,unixarplen, ihw, khw, maxfdp;
+		int i, prflag, k, pf_socket, unix_domain_socket, arplen,unixarplen, ihw, khw, maxfdp,len;
 		char   *ptr,*ptr1, *hw_address1, sender_ethernet_address[6], buffer[ETH_FRAME_LEN+1], unix_buffer[ETH_FRAME_LEN+1], tmp_hw_address[6], tmp_ip_address[INET_ADDRSTRLEN]; 
 		struct sockaddr	*sa;
 		struct sockaddr_un unixaddr, unixarpaddr;
@@ -581,7 +581,7 @@ int main(int argc, char const *argv[])
  		return 0;
  	}
  
- 	if((unix_domain_socket = socket(AF_LOCAL, SOCK_STREAM, 0))==-1)
+ 	if((unix_domain_socket = socket(AF_UNIX, SOCK_STREAM, 0))==-1)
  	{
  		printf("Error in creation of Unix Domain socket\n");
 		perror("socket");
@@ -589,12 +589,13 @@ int main(int argc, char const *argv[])
 		
 	}
 
-	unlink(UNIXDG_PATH);
+
 	bzero(&unixaddr, sizeof(unixaddr));
-	unixaddr.sun_family = AF_LOCAL;
+	unixaddr.sun_family = AF_UNIX;
 	strcpy(unixaddr.sun_path, UNIXDG_PATH);
-	
-    if(bind(unix_domain_socket, (SA *) &unixaddr, SUN_LEN(&unixaddr))<0)
+	unlink(UNIXDG_PATH);
+	 len = strlen(unixaddr.sun_path) + sizeof(unixaddr.sun_family);
+    if(bind(unix_domain_socket, (SA *) &unixaddr, len)<0)
     {       fprintf(stderr,"bind() failed. errorno =  %d\n",errno); 
             exit(1);
     }
@@ -604,9 +605,7 @@ int main(int argc, char const *argv[])
             exit(1);
     }
 
-    for (i = 0; i < FD_SETSIZE; i++)
-		client[i] = -1;			/* -1 indicates available entry */
-	
+	printf("socket bound : %d\n", unix_domain_socket);
 	FD_ZERO(&allset);
 	FD_SET(unix_domain_socket, &allset);
 	FD_SET(pf_socket, &allset);

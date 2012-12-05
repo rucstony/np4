@@ -10,7 +10,13 @@
 #define USID_PROTO 0xDE  
 #define HOSTNAME_LEN 255
 #define BUFSIZE 1500
-
+struct hwaddr 
+{
+    int             sll_ifindex;     /* Interface number */
+    unsigned short  sll_hatype;  /* Hardware type */
+    unsigned char   sll_halen;       /* Length of address */
+    unsigned char   sll_addr[8];     /* Physical layer address */
+};
 struct proto proto_v4 = { proc_v4, send_v4, NULL, NULL, NULL, 0, IPPROTO_ICMP };
 int pg_sock, packet_socket, if_index ;
 int node_visited=0;
@@ -70,7 +76,7 @@ void proc_v4(char *ptr, ssize_t len, struct msghdr *msg, struct timeval *tvrecv)
     struct icmp     *icmp;
     struct timeval  *tvsend;
 
-    ip = (struct ip *) ptr;     /* start of IP header */
+    ip = (struct ip *) ptr;     /* start of IP h590eader */
     hlen1 = ip->ip_hl << 2;     /* length of IP header */
     if (ip->ip_p != IPPROTO_ICMP)
         return;             /* not ICMP */
@@ -587,7 +593,7 @@ char * retrievePredecessorNodeIPaddress( struct payload * processed_received_pay
     /* The predecessor can be obtained by returning the 'NextTourIPaddress using last_visited_index -1 .. wooo' */
     char IPaddress[INET_ADDRSTRLEN];
 
-    IPaddress = retrieveNextTourIpAddress( processed_received_payload->IPaddress_list, processed_received_payload->last_visited_index - 1  );
+    strcpy(IPaddress ,retrieveNextTourIpAddress( processed_received_payload->IPaddress_list, processed_received_payload->last_visited_index - 1  ));
     return IPaddress;
 }
 
@@ -601,16 +607,16 @@ void recievePacketFromRTSock(int rt_sock)
     int pglen;        
     struct hwaddr HWaddr;
     void* buffer = (void*)malloc(BUFSIZE); 
-    rtlen = sizeof( struct sockaddr );    
+ 
     struct payload * processed_recieved_payload; 
     char predecessorIPaddress[INET_ADDRSTRLEN];
-
+    rtlen = sizeof( struct sockaddr );   
     if((n=recvfrom(rt_sock,buffer, BUFSIZE, 0, &rtaddr, &rtlen)>0))
     {
         printf("Recieved %d bytes from whoever..\n",n );
      
         processed_recieved_payload = preprocessPacket(buffer);
-        predecessorIPaddress = retrievePredecessorNodeIPaddress( processed_received_payload );
+        strcpy(predecessorIPaddress,retrievePredecessorNodeIPaddress( processed_recieved_payload ));
         printf("Predecessor IP (Must ping to this address): %s \n",predecessorIPaddress );    
         
         bzero( &pgaddr, sizeof( pgaddr ) );
@@ -625,7 +631,7 @@ void recievePacketFromRTSock(int rt_sock)
         HWaddr.sll_hatype = ARPHRD_ETHER;
         HWaddr.sll_halen = 6;
 
-        areq ((struct sockaddr *)pgaddr, pglen, &HWaddr);
+        areq ((struct sockaddr *)&pgaddr, pglen, &HWaddr);
 
        /* 
         checkIfIdentifierValid();

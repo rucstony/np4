@@ -276,7 +276,7 @@ struct arp_frame * convertToHostByteOrder(struct arp_frame * recieved_arp_frame)
 	return recieved_arp_frame;
 }
 
-void insert_to_cache( char * ip_address,char * hw_address, int if_index, char * hatype, int connfd )
+void insert_to_cache( char * ip_address,char * hw_address, int if_index, unsigned short hatype, int connfd )
 {
 
     struct IP_hw_address_mpg *node = (struct IP_hw_address_mpg *)malloc( sizeof(struct IP_hw_address_mpg) );
@@ -297,7 +297,7 @@ void insert_to_cache( char * ip_address,char * hw_address, int if_index, char * 
  	printf("Here..2\n");
 
 //    memcpy( (void *)node->sll_hatype, (void *) hatype, sizeof(unsigned short) );
-    node->sll_hatype = (unsigned short)atoi(hatype);
+    node->sll_hatype = hatype;
 	printf("Here..3\n");
 
 	node->unix_domain_confd =  connfd ;
@@ -409,7 +409,7 @@ int cache_delete_entry(int connfd )
 	return returnval;
 }
 
-int cache_update_entry( char * ip_address,char * hw_address, char * if_index, char * hatype, int connfd)
+int cache_update_entry( char * ip_address,char * hw_address, char * if_index, unsigned short hatype, int connfd)
 {
 	struct IP_hw_address_mpg *node; 	
 	struct IP_hw_address_mpg *prev; 	
@@ -435,7 +435,7 @@ int cache_update_entry( char * ip_address,char * hw_address, char * if_index, ch
 		    	memcpy( node->hw_address, hw_address, 6 );
 		    }
 		    node->sll_ifindex =  if_index ;
-		    memcpy( (void *)node->sll_hatype, (void *) hatype, 1 );		
+		    node->sll_hatype = hatype;		
 		    returnval=1;
 		}	
 		prev = node;
@@ -715,7 +715,7 @@ int main(int argc, char const *argv[])
 			        	floodARP(pf_socket,msg_fields[0]/*target ip address*/ );
 			        	printf("ARP request sent on pf_socket\n");
 			        	
-			        	insert_to_cache( msg_fields[0],"", msg_fields[1],msg_fields[2],connfd );
+			        	insert_to_cache( msg_fields[0],"", msg_fields[1],(unsigned short)atoi(msg_fields[2]),connfd );
 			        	//void insert_to_cache( char * ip_address,char * hw_address, int if_index, char * hatype, int connfd )
 
 			        	FD_SET(connfd, &rset);
@@ -736,7 +736,7 @@ int main(int argc, char const *argv[])
 //---------------------------------------------------------------------------------------------------------
 		}
         else if (FD_ISSET(pf_socket, &rset)) 
-        {        /* new client connection */
+        {       
  
  			printf("Receiving packet ...\n");
         	arplen=sizeof(arpaddr);
@@ -785,7 +785,7 @@ int main(int argc, char const *argv[])
 		            		insert_to_cache( recvd_packet->sender_ip_address,sender_ethernet_address, arpaddr.sll_ifindex, recvd_packet->hard_type, 0 );	
 		            	}
 
-		            	sendARPResponse(pf_socket,recvd_packet->sender_ip_address/*target ip address*/ ,recvd_packet->sender_ethernet_address, 2/*arp response*/);
+		            	sendARPResponse(pf_socket,recvd_packet->sender_ip_address/*target ip address*/ ,sender_ethernet_address, arpaddr.sll_ifindex/*arp response*/);
 	            	
 	            	}else
 	            	{
@@ -806,10 +806,13 @@ int main(int argc, char const *argv[])
             				
             				writen(cache->unix_domain_confd,cache->hw_address,6);
             				printf("Replied to areq for IP : %s \n" , recvd_packet->sender_ip_address);
+
             				FD_CLR(cache->unix_domain_confd,&rset);
-            				close(cache->unix_domain_confd);
+							close(cache->unix_domain_confd);
             			}
             			cache_update_entry( recvd_packet->sender_ip_address,recvd_packet->sender_ethernet_address,arpaddr.sll_ifindex, recvd_packet->hard_type, -1);
+            			printf("I AM HERE ...4\n");
+
             		}
 
 	            }

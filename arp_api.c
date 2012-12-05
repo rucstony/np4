@@ -17,9 +17,10 @@ static void arp_receive_timeout(int signo)
 }
 int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 {
-    int unix_domain_socket, send_result, replen, n, ihw, khw, len;
+    int unix_domain_socket, send_result, replen, n, ihw, khw, len, nready;
     struct sockaddr_un unixaddr, repaddr;
     char *ip_address, str_from_sock[MAXLINE], output_to_sock[MAXLINE], node_ethernet_address[MAXLINE];
+    fd_set  rset, allset;
     if((unix_domain_socket = socket(AF_UNIX, SOCK_STREAM, 0))==-1)
     {
         printf("Error in creation of Unix Domain socket\n");
@@ -69,29 +70,52 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
     alarm(10);
 
    // if((n=recvfrom(unix_domain_socket,str_from_sock,MAXLINE,0,&repaddr,&replen))>=0)
-    if((n=read(unix_domain_socket,str_from_sock,MAXLINE))>=0)
-    {
-        alarm(0);
+  FD_ZERO(&allset);
+  //FD_SET(connfd, &allset);
+  FD_SET(unix_domain_socket, &allset);
 
 
-
-        ihw = IF_HADDR;
-        khw=0;
-        printf("\nMessage recieved from ARP unix domain socket..%s \n" , str_from_sock);
+  for ( ; ; ) 
+  {
     
-        do 
-        {   
-            HWaddr->sll_addr[khw] = str_from_sock[khw] & 0xff;
-            
-            printf("%.2x%s", node_ethernet_address[khw] & 0xff, (ihw == 1) ? " " : ":");
-            khw++;
-        } while (--ihw > 0);
-       
-       close(unix_domain_socket);
-       return 1; 
+    rset = allset;    /* structure assignment */
+    if((nready = select(unix_domain_socket+1, &rset, NULL, NULL, NULL))<0)
+    { 
+      if(errno==EINTR)  
+        continue;
+      else
+        err_sys("select error");  
+    }   
+    if (FD_ISSET(unix_domain_socket, &rset)) 
+    { 
+    printf("in areq:readable \n");
+        if((n=read(unix_domain_socket,str_from_sock,MAXLINE))>0)
+        {
+          printf("entering if\n");
+            alarm(0);
 
-   }
 
+
+            ihw = IF_HADDR;
+            khw=0;
+            printf("\nMessage recieved from ARP unix domain socket..%s \n" , str_from_sock);
+        
+            do 
+            {   
+                HWaddr->sll_addr[khw] = str_from_sock[khw] & 0xff;
+                
+                printf("%.2x%s", node_ethernet_address[khw] & 0xff, (ihw == 1) ? " " : ":");
+                khw++;
+            } while (--ihw > 0);
+           
+           close(unix_domain_socket);
+           return 1; 
+
+       }else{
+        perror("read");
+       }
+    }
+  }
    close(unix_domain_socket);
 
    return -1;

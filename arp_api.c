@@ -17,9 +17,9 @@ static void arp_receive_timeout(int signo)
 }
 int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 {
-    int unix_domain_socket, send_result, replen, n, ihw, khw, len, nready;
+    int unix_domain_socket, send_result, replen, n, ihw, khw, len, nready, maxfd;
     struct sockaddr_un unixaddr, repaddr;
-    char *ip_address, str_from_sock[MAXLINE], output_to_sock[MAXLINE], node_ethernet_address[MAXLINE];
+    char ip_address[100], str_from_sock[MAXLINE], output_to_sock[MAXLINE], node_ethernet_address[MAXLINE];
     fd_set  rset, allset;
     if((unix_domain_socket = socket(AF_UNIX, SOCK_STREAM, 0))==-1)
     {
@@ -37,27 +37,29 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
     // unlink(UNIXDG_PATH);
     printf("sun path: %s\n",unixaddr.sun_path);
        len = strlen(unixaddr.sun_path) + sizeof(unixaddr.sun_family);
-
+      printf("IP recieved in areq: %s\n", Sock_ntop_host(IPaddr, sizeof(struct sockaddr)));
+    
+    strcpy(ip_address,Sock_ntop_host(IPaddr, sizeof(*IPaddr)));
 
     printf("bound %d\n",unix_domain_socket);
     if(connect(unix_domain_socket, (struct sockaddr_un *) &unixaddr, len)<0)
     {     perror("connect");
             exit(1);
     }
+    printf("connected\n");
 
 
-      
-    
-    strcpy(ip_address,Sock_ntop_host(IPaddr, sizeof(*IPaddr)));
+    printf("1\n");
    // inet_ntop( AF_INET, (IPaddr->sin_addr), ip_address, INET_ADDRSTRLEN );
 
-    printf("areq() called for IP address: %s\n",ip_address );
+   // printf("areq() called for IP address: %s\n",ip_address );
     sprintf(output_to_sock,"%s|%d|%hu|%u\n", ip_address, 
                                           HWaddr->sll_ifindex,
                                           HWaddr->sll_hatype,
                                           HWaddr->sll_halen);
+     printf("1\n");
 //    printf("%s\n", output_to_sock);
-    printf("\nMessage sent to ARP unix domain socket..%s\n",output_to_sock );
+
     
    // send_result = sendto(unix_domain_socket,output_to_sock,strlen(output_to_sock),0,&unixaddr,sizeof(unixaddr));
    // if (send_result == -1){ perror("sendto"); exit(0); }
@@ -65,21 +67,22 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
     if (write(unix_domain_socket, output_to_sock, sizeof(output_to_sock)) < 0)
         perror("write");
 
-    
+    printf("\nMessage sent to ARP unix domain socket..%s\n",output_to_sock );
     signal(SIGALRM,arp_receive_timeout);    
     alarm(10);
 
    // if((n=recvfrom(unix_domain_socket,str_from_sock,MAXLINE,0,&repaddr,&replen))>=0)
-  FD_ZERO(&allset);
+    FD_ZERO(&allset);
+    FD_ZERO(&rset);
   //FD_SET(connfd, &allset);
-  FD_SET(unix_domain_socket, &allset);
+    FD_SET(unix_domain_socket, &allset);
 
-
+  maxfd=unix_domain_socket;
   for ( ; ; ) 
   {
     
     rset = allset;    /* structure assignment */
-    if((nready = select(unix_domain_socket+1, &rset, NULL, NULL, NULL))<0)
+    if((nready = select(maxfd+1, &rset, NULL, NULL, NULL))<0)
     { 
       if(errno==EINTR)  
         continue;
@@ -94,20 +97,21 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
           printf("entering if\n");
             alarm(0);
 
-
-
+           n= sizeof(str_from_sock);
+           str_from_sock[n]=0;
             ihw = IF_HADDR;
             khw=0;
-            printf("\nMessage recieved from ARP unix domain socket..%s \n" , str_from_sock);
-        
+            printf("\nMessage recieved from ARP unix domain socket..%d..%s \n" ,n, str_from_sock);
+             memcpy(HWaddr->sll_addr,str_from_sock,IF_HADDR);
             do 
             {   
-                HWaddr->sll_addr[khw] = str_from_sock[khw] & 0xff;
+       
+               
                 
-                printf("%.2x%s", node_ethernet_address[khw] & 0xff, (ihw == 1) ? " " : ":");
+                printf("%.2x%s", HWaddr->sll_addr[khw] & 0xff, (ihw == 1) ? " " : ":");
                 khw++;
             } while (--ihw > 0);
-           
+           printf("done...\n");
            close(unix_domain_socket);
            return 1; 
 

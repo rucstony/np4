@@ -21,6 +21,8 @@ struct proto proto_v4 = { proc_v4, send_v4, NULL, NULL, NULL, 0, IPPROTO_ICMP };
 int pg_sock, packet_socket, if_index ;
 int node_visited=0;
 int mcast_timeout=0;
+int mcast_port;
+char mcast_ip_address[INET_ADDRSTRLEN];
 
 char  source_hw_mac_address[6], destination_hw_mac_address[6], source_ip_address[INET_ADDRSTRLEN], destination_ip_address[INET_ADDRSTRLEN];
 
@@ -71,6 +73,7 @@ void readloop()
 
 void proc_v4(char *ptr, ssize_t len, struct msghdr *msg, struct timeval *tvrecv)
 {
+
     int             hlen1, icmplen;
     double          rtt;
     struct ip       *ip;
@@ -408,12 +411,12 @@ void sendPingPacket( int s , struct icmp * populated_icmp_frame , char * source_
         
     /*pointer to userdata in ethernet frame*/
     unsigned char* data = buffer + 34;
-        
+    struct iphdr *ip_pkt;    
     /*another pointer to ethernet header*/
     struct ethhdr *eh = (struct ethhdr *)etherhead;
      
 /*another pointer to ethernet header*/
-    struct ip *iph = (struct ip *)iphead;
+  //  struct ip *iph = (struct ip *)iphead;
     
 
     int send_result = 0,k=0;
@@ -491,15 +494,29 @@ void sendPingPacket( int s , struct icmp * populated_icmp_frame , char * source_
     /*set the frame header*/
     memcpy((void*)buffer, (void*)dest_mac, ETH_ALEN);
     memcpy((void*)(buffer+ETH_ALEN), (void*)src_mac, ETH_ALEN);
-    eh->h_proto = htons(USID_PROTO);
+    eh->h_proto = htons(ETH_P_IP);
 
-    //fill ip header
-    iph->ip_id=htons(IDENTIFIER);
-    iph->ip_p=htons(IPPROTO_ICMP);
-    iph->ip_hl=htons(20);
-    iph->ip_sum=htons(0);
-    inet_aton(source_ip_address, &iph->ip_src);
-    inet_aton(destination_ip_address, &iph->ip_dst);
+
+
+    /* Fill out the IP header. */
+  ip_pkt = (struct iphdr *) (iphead);
+  ip_pkt->ihl = 5;              /* Header length / 4.  Always 5 if no opts. */
+  ip_pkt->version = 4;          /* IP version.         Always 4.            */
+  ip_pkt->tos = 0;              /* Type of service.    8 bits.              */
+                                /* Total length.       Bytes, up to 64K.    */
+  ip_pkt->tot_len = htons (BUFSIZE);
+  ip_pkt->id = htons(IDENTIFIER);               /* Identification.                          */
+  ip_pkt->frag_off = 0;         /* Fragment offset.                         */
+  ip_pkt->ttl = 64;             /* Time to live.       8 bits.              */
+  ip_pkt->protocol = htons(IPPROTO_ICMP); /* Protocol.         IPPROTO_xxx          */
+                                /* Source address.     IP address.          */
+    
+  ip_pkt->saddr=  inet_addr(source_ip_address);
+  ip_pkt->daddr=  inet_addr(destination_ip_address);
+
+  /* Compute the IP header checksum. */
+  ip_pkt->check = 0;
+
     /*fill the frame with some datip_src,a*/
     memcpy((void*)data,(void*)populated_icmp_frame, sizeof( struct icmp ));
 
@@ -612,30 +629,89 @@ void handleMulticastjoining( int mcast_udp_sock, struct payload * processed_rece
     int port_number;
     
     retrieveMulticastIpAddress( processed_received_payload->IPaddress_list, multicast_ip, &port_number );
-    joinMulticastGroup( int mcast_udp_sock, multicast_ip );
+    joinMulticastGroup( mcast_udp_sock, multicast_ip );
 
 }
-
-void recievePacketFromRTSock(int rt_sock)
+/*
+    Retrieve Mac address from interface index.
+*/
+unsigned char * retrieveMacFromInterfaceIndex( int interface_index )
 {
-    struct sockaddr rtaddr;
+    unsigned char source_mac[6];
+    struct hwa_info *hwa, *hwahead;
+    struct sockaddr_in * ip_address_structure;
+    int k,i;
+    char   *ptr,*ptr1;
+    
+    /* Flood with broadcast address on all interfaces except eth0 and lo and recieved interface */
+    for (hwahead = hwa = Get_hw_addrs(); hwa != NULL; hwa = hwa->hwa_next) 
+    {
+        if( hwa->if_index == interface_index )
+        {   
+
+            ptr = hwa->if_haddr;
+            ptr1 = hwa->if_haddr;
+
+            i = IF_HADDR;
+            k=0;
+            do 
+            {   
+                source_mac[k] = *ptr++ & 0xff;
+                k++;
+                printf("%.2x%s", *ptr1++ & 0xff, (i == 1) ? " " : ":");
+            } while (--i > 0);
+
+        
+        }
+    }
+
+    return source_mac;
+}
+
+int retrieveInterfaceIndexFromIP( char * IPaddress )
+{
+    struct hwa_info *hwa, *hwahead;
+    struct sockaddr_in * ip_address_structure;
+    int k,i;
+    char   *ptr,*ptr1;
+    char * ifname_split;
+
+    for (hwahead = hwa = Get_hw_addrs(); hwa != NULL; hwa = hwa->hwa_next) 
+    {
+        printf("get hw addrss loop\n");
+        ifname_split = strtok(hwa->if_name, ":"); //get pointer to first token found and store in 0
+    
+        if( strcmp(ifname_split, "eth0")==0)
+        {   
+            return hwa->if_index;
+        }
+    } 
+    return -1;  
+}
+
+void recievePacketFromRTSock(int rt_sock, int mcast_udp_sock,char * predecessorIPaddress,struct hwaddr * HWaddr)
+{
+    struct sockaddr_ll rtaddr;
     char source_address[INET_ADDRSTRLEN], hostname[HOSTNAME_LEN];
-    int rtlen, n;
+    int rtlen, n,ihw,khw;
     time_t ticks;
     struct sockaddr_in pgaddr;
     int pglen;        
-    struct hwaddr HWaddr;
+    
     void* buffer = (void*)malloc(BUFSIZE); 
- 
+
     struct payload * processed_recieved_payload; 
-    char predecessorIPaddress[INET_ADDRSTRLEN];
+
+
     rtlen = sizeof( struct sockaddr );   
     if((n=recvfrom(rt_sock,buffer, BUFSIZE, 0, &rtaddr, &rtlen)>0))
     {
-        printf("Recieved %d bytes from whoever..\n",n );
-     
+        printf("Recieved from whoever on interface %d.\n",rtaddr.sll_ifindex );
+       
+        printf("interface to use for sending: %d",retrieveInterfaceIndexFromIP(source_ip_address));
+         memcpy(source_hw_mac_address,retrieveMacFromInterfaceIndex( retrieveInterfaceIndexFromIP(source_ip_address)),6);
         processed_recieved_payload = preprocessPacket(buffer);
-        handleMulticastjoining(processed_recieved_payload);
+        handleMulticastjoining(mcast_udp_sock, processed_recieved_payload);
         
         strcpy(predecessorIPaddress,retrievePredecessorNodeIPaddress( processed_recieved_payload ));
         printf("Predecessor IP (Must ping to this address): %s \n",predecessorIPaddress );    
@@ -648,12 +724,27 @@ void recievePacketFromRTSock(int rt_sock)
 
         pglen = sizeof(pgaddr);
 
-        HWaddr.sll_ifindex = 1;
-        HWaddr.sll_hatype = ARPHRD_ETHER;
-        HWaddr.sll_halen = 6;
+        HWaddr->sll_ifindex = 1;
+        if_index=retrieveInterfaceIndexFromIP(source_ip_address);
+        HWaddr->sll_hatype = ARPHRD_ETHER;
+        HWaddr->sll_halen = 6;
 
-        areq ((struct sockaddr *)&pgaddr, pglen, &HWaddr);
+        areq ((struct sockaddr *)&pgaddr, pglen, HWaddr);
+      
 
+            ihw = IF_HADDR;
+            khw=0;
+            printf("returned  from areq..\n" );
+        
+            do 
+            {  
+                
+                printf("%.2x%s", HWaddr->sll_addr[khw] & 0xff, (ihw == 1) ? " " : ":");
+                khw++;
+            } while (--ihw > 0);
+           
+  printf("returned  from areq..\n" );
+        
        /* 
         checkIfIdentifierValid();
         retrieveHostName( source_address, hostname );
@@ -684,6 +775,7 @@ void recievePacketFromPGSock(int pg_sock)
 
     if((n=recvfrom(pg_sock,buffer, BUFSIZE, 0, &pgaddr, &pglen)>0))
     {
+
         printf("Recieved %d bytes from whoever..\n",n );
     } 
     return;   
@@ -715,7 +807,7 @@ void sendMulticastMessage( int sockfd, char * sendline)
     bzero(&maddr, sizeof(maddr));
     maddr.sin_family = AF_INET;
     maddr.sin_port = htons(mcast_port);
-    inet_pton(AF_INET, mcast_ip_addres, &maddr.sin_addr);
+    inet_pton(AF_INET, mcast_ip_address, &maddr.sin_addr);
     maddrlen = sizeof(maddr);
 
     gethostname( own_vm_name, sizeof(own_vm_name) );
@@ -749,8 +841,8 @@ void recieveFirstMulticastMessage(int sockfd)
 //    put timeout of 5 seconds on subsequent recieves.
     while(1)
     {
-        alarm(5)
-        recieveMulticastMessage();
+        alarm(5);
+        recieveMulticastMessage(sockfd);
         if (mcast_timeout == 1)
             return;
         alarm(0);
@@ -786,6 +878,8 @@ int main(int argc, char const *argv[])
     char * destination_address;
     int                 mcast_udp_sock;
     struct sockaddr_in  servaddr, grpaddr, cliaddr;
+     char predecessorIPaddress[INET_ADDRSTRLEN];
+     struct hwaddr *HWaddr;
 
     mcast_udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
 
@@ -836,6 +930,7 @@ int main(int argc, char const *argv[])
         
         p = createPayload( IPaddress_list );
         retrieveOwnCanonicalIPAddress( source_address );
+        retrieveOwnCanonicalIPAddress( source_ip_address);
         destination_address =  retrieveNextTourIpAddress(IPaddress_list,0);
         sendTourPacket( rt_sock, p, destination_address,source_address );
 
@@ -844,14 +939,14 @@ int main(int argc, char const *argv[])
 //    exit(0); 
 
     FD_ZERO( &rset );
-    maxfd = max( /*pg_sock*/0, rt_sock ) +1;
+    maxfd = max( pg_sock, rt_sock ) +1;
    // maxfd = max( maxfd, pg_sock ) + 1;
 
     for ( ; ; ) 
     {
          //   FD_SET( packet_socket, &rset );
             FD_SET( rt_sock, &rset );
-            //FD_SET( pg_sock, &rset );
+            FD_SET( pg_sock, &rset );
 
             if( ( nready = select( maxfd, &rset, NULL, NULL, NULL ) ) < 0 )
             {
@@ -871,16 +966,45 @@ int main(int argc, char const *argv[])
    //         {
      //          printf("What the crap is this shit doing here ? \n");     
        //     }
-            else if( FD_ISSET(rt_sock, &rset) )
+            if( FD_ISSET(rt_sock, &rset) )
             {
                 printf("Recieving packet from rt_sock..\n");
-                recievePacketFromRTSock(rt_sock);
+                   
+
+                HWaddr = (struct HWaddr *)malloc(sizeof(struct hwaddr));
+                recievePacketFromRTSock(rt_sock,mcast_udp_sock,source_ip_address,HWaddr);
+                memcpy(destination_hw_mac_address,HWaddr->sll_addr,IF_HADDR);
+                pid = IDENTIFIER & 0xffff;  /* ICMP ID field is 16 bits */
+                Signal(SIGALRM, sig_alrm);
+
+                ai = Host_serv(source_ip_address, NULL, 0, 0);
+
+                h = Sock_ntop_host(ai->ai_addr, ai->ai_addrlen);
+                printf("PING %s (%s): %d data bytes\n",
+                        ai->ai_canonname ? ai->ai_canonname : h,
+                        h, datalen);
+
+                    /* 4initialize according to protocol */
+                if (ai->ai_family == AF_INET) 
+                {
+                    pr = &proto_v4;
+
+                } 
+                else
+                    err_quit("unknown address family %d", ai->ai_family);
+
+                pr->sasend = ai->ai_addr;
+                pr->sarecv = Calloc(1, ai->ai_addrlen);
+                pr->salen = ai->ai_addrlen;
+                pr->icmpproto = IPPROTO_ICMP;
+                readloop();
+
             }   
-            /*else if( FD_ISSET(pg_sock, &rset) )
+            else if( FD_ISSET(pg_sock, &rset) )
             {
                 printf("Recieving packet from pg_sock..\n");
                 recievePacketFromPGSock(pg_sock);
-            } */
+            } 
             /*else if( FD_ISSET(mcast_udp_sock, &rset) )
             {
                 printf("Recieving packet from mcast_udp_sock..\n");
@@ -893,33 +1017,9 @@ int main(int argc, char const *argv[])
     //pinging**************************
     
 
-   strcpy(host, "192.168.1.101");
 
-    pid = IDENTIFIER & 0xffff;  /* ICMP ID field is 16 bits */
-    Signal(SIGALRM, sig_alrm);
 
-    ai = Host_serv(host, NULL, 0, 0);
-
-    h = Sock_ntop_host(ai->ai_addr, ai->ai_addrlen);
-    printf("PING %s (%s): %d data bytes\n",
-            ai->ai_canonname ? ai->ai_canonname : h,
-            h, datalen);
-
-        /* 4initialize according to protocol */
-    if (ai->ai_family == AF_INET) 
-    {
-        pr = &proto_v4;
-
-    } 
-    else
-        err_quit("unknown address family %d", ai->ai_family);
-
-    pr->sasend = ai->ai_addr;
-    pr->sarecv = Calloc(1, ai->ai_addrlen);
-    pr->salen = ai->ai_addrlen;
-    pr->icmpproto = IPPROTO_ICMP;
-    readloop();
-
+    
 
 
 

@@ -939,14 +939,14 @@ int main(int argc, char const *argv[])
 //    exit(0); 
 
     FD_ZERO( &rset );
-    maxfd = max( pg_sock, rt_sock ) +1;
+    maxfd = max( /*pg_sock*/0, rt_sock ) +1;
    // maxfd = max( maxfd, pg_sock ) + 1;
 
     for ( ; ; ) 
     {
          //   FD_SET( packet_socket, &rset );
             FD_SET( rt_sock, &rset );
-            FD_SET( pg_sock, &rset );
+           //FD_SET( pg_sock, &rset );
 
             if( ( nready = select( maxfd, &rset, NULL, NULL, NULL ) ) < 0 )
             {
@@ -1000,11 +1000,11 @@ int main(int argc, char const *argv[])
                 readloop();
 
             }   
-            else if( FD_ISSET(pg_sock, &rset) )
-            {
-                printf("Recieving packet from pg_sock..\n");
-                recievePacketFromPGSock(pg_sock);
-            } 
+           // else if( FD_ISSET(pg_sock, &rset) )
+          //  {
+                //printf("Recieving packet from pg_sock..\n");
+               // recievePacketFromPGSock(pg_sock);
+           // } 
             /*else if( FD_ISSET(mcast_udp_sock, &rset) )
             {
                 printf("Recieving packet from mcast_udp_sock..\n");

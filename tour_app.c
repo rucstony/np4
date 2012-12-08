@@ -36,39 +36,12 @@ struct payload
 void readloop()
 {
     int             size;
-    char            recvbuf[BUFSIZE];
-    char            controlbuf[BUFSIZE];
-    struct msghdr   msg;
-    struct iovec    iov;
-    ssize_t         n;
-    struct timeval  tval;
-
-
     size = 60 * 1024;       /* OK if setsockopt fails */
     setsockopt(pg_sock, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
-
+   //sleep(1);
+    printf("sigalrm called\n");
     sig_alrm(SIGALRM);      /* send first packet */
 
-    iov.iov_base = recvbuf;
-    iov.iov_len = sizeof(recvbuf);
-    msg.msg_name = pr->sarecv;
-    msg.msg_iov = &iov;
-    msg.msg_iovlen = 1;
-    msg.msg_control = controlbuf;
-    for ( ; ; ) {
-        msg.msg_namelen = pr->salen;
-        msg.msg_controllen = sizeof(controlbuf);
-        n = recvmsg(pg_sock, &msg, 0);
-        if (n < 0) {
-            if (errno == EINTR)
-                continue;
-            else
-                err_sys("recvmsg error");
-        }
-
-        Gettimeofday(&tval, NULL);
-        proc_v4(recvbuf, n, &msg, &tval);
-    }
 }
 
 void proc_v4(char *ptr, ssize_t len, struct msghdr *msg, struct timeval *tvrecv)
@@ -79,35 +52,91 @@ void proc_v4(char *ptr, ssize_t len, struct msghdr *msg, struct timeval *tvrecv)
     struct ip       *ip;
     struct icmp     *icmp;
     struct timeval  *tvsend;
-
+  printf("check id of packet 1\n");
     ip = (struct ip *) ptr;     /* start of IP h590eader */
-    hlen1 = ip->ip_hl << 2;     /* length of IP header */
-    if (ip->ip_p != IPPROTO_ICMP)
-        return;             /* not ICMP */
+   printf("check id of packet: %hu\n",ntohs(IDENTIFIER));
+    if(ip->ip_id!=ntohs(IDENTIFIER))
+    {
+        printf("not our id\n");
+    }else
+    {
+        printf("our id\n");
 
-    icmp = (struct icmp *) (ptr + hlen1);   /* start of ICMP header */
-    if ( (icmplen = len - hlen1) < 8)
-        return;             /* malformed packet */
+        hlen1 = ip->ip_hl << 2;     /* length of IP header */
+        if (ip->ip_p != IPPROTO_ICMP)
+            return;             /* not ICMP */
 
-    if (icmp->icmp_type == ICMP_ECHOREPLY) {
-        if (icmp->icmp_id != pid)
-            return;         /* not a response to our ECHO_REQUEST */
-        if (icmplen < 16)
-            return;         /* not enough data to use */
+        icmp = (struct icmp *) (ptr + hlen1);   /* start of ICMP header */
+        if ( (icmplen = len - hlen1) < 8)
+            return;             /* malformed packet */
 
-        tvsend = (struct timeval *) icmp->icmp_data;
-        tv_sub(tvrecv, tvsend);
-        rtt = tvrecv->tv_sec * 1000.0 + tvrecv->tv_usec / 1000.0;
+        if (icmp->icmp_type == ICMP_ECHOREPLY) {
+            if (icmp->icmp_id != pid)
+                return;         /* not a response to our ECHO_REQUEST */
+            if (icmplen < 16)
+                return;         /* not enough data to use */
 
-        printf("%d bytes from %s: seq=%u, ttl=%d, rtt=%.3f ms\n",
-                icmplen, Sock_ntop_host(pr->sarecv, pr->salen),
-                icmp->icmp_seq, ip->ip_ttl, rtt);
+            tvsend = (struct timeval *) icmp->icmp_data;
+            tv_sub(tvrecv, tvsend);
+            rtt = tvrecv->tv_sec * 1000.0 + tvrecv->tv_usec / 1000.0;
 
-    } else if (verbose) {
-        printf("  %d bytes from %s: type = %d, code = %d\n",
-                icmplen, Sock_ntop_host(pr->sarecv, pr->salen),
-                icmp->icmp_type, icmp->icmp_code);
+            printf("%d bytes from %s: seq=%u, ttl=%d, rtt=%.3f ms\n",
+                    icmplen, Sock_ntop_host(pr->sarecv, pr->salen),
+                    icmp->icmp_seq, ip->ip_ttl, rtt);
+
+        } else if (verbose) {
+            printf("  %d bytes from %s: type = %d, code = %d\n",
+                    icmplen, Sock_ntop_host(pr->sarecv, pr->salen),
+                    icmp->icmp_type, icmp->icmp_code);
+        }
     }
+}
+void recievePacketFromPGSock(int pg_sock)
+{
+    struct sockaddr pgaddr;
+    int pglen;
+    char            recvbuf[BUFSIZE];
+    char            controlbuf[BUFSIZE];
+    struct msghdr   msg;
+    struct iovec    iov;
+    ssize_t         n;
+    struct timeval  tval;
+    
+    void* buffer = (void*)malloc(BUFSIZE); 
+    memset(buffer,  0,BUFSIZE);
+    pglen = sizeof( struct sockaddr );   
+
+    iov.iov_base = recvbuf;
+    iov.iov_len = sizeof(recvbuf);
+    msg.msg_name = pr->sarecv;
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = controlbuf;
+    //for ( ; ; ) {
+        msg.msg_namelen = pr->salen;
+        msg.msg_controllen = sizeof(controlbuf);
+        n = recvmsg(pg_sock, &msg, 0);
+    //    if (n < 0) {
+      //      if (errno == EINTR)
+        //        continue;
+         //   else
+           //     err_sys("recvmsg error");
+       // }
+        if(n<0)
+        {
+            perror("recvmsg");
+        }
+        printf("ping recieved..\n");
+        Gettimeofday(&tval, NULL);
+        proc_v4(recvbuf, n, &msg, &tval);
+    //}
+
+//    if((n=recvfrom(pg_sock,buffer, BUFSIZE, 0, &pgaddr, &pglen)>0))
+  //  {
+
+    //    printf("Recieved %d bytes from whoever..\n",n );
+    //} 
+    return;   
 }
 
 void send_v4(void)
@@ -125,6 +154,7 @@ void send_v4(void)
 
     len = 8 + datalen;      /* checksum ICMP header and data */
    // icmp->icmp_cksum = 0;
+
    // icmp->icmp_cksum = in_cksum((u_short *) icmp, len);
     sendPingPacket( packet_socket ,icmp, source_hw_mac_address, destination_hw_mac_address , if_index , source_ip_address, destination_ip_address);
 
@@ -433,7 +463,7 @@ void sendPingPacket( int s , struct icmp * populated_icmp_frame , char * source_
     /*Broadcast MAC address*/
     //unsigned char dest_mac[6] = {0x00, 0x0c, 0x29, 0x24, 0x8f, 0x70};
     //unsigned char dest_mac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    
+    memset(buffer,  0,ETH_FRAME_LEN);
     i = IF_HADDR;
     printf("\n\nSending Ping Packet to  \n\t Destination H/W Address :\n");
     do 
@@ -520,7 +550,7 @@ void sendPingPacket( int s , struct icmp * populated_icmp_frame , char * source_
     /*fill the frame with some datip_src,a*/
     memcpy((void*)data,(void*)populated_icmp_frame, sizeof( struct icmp ));
 
-    printf("Just before send.. \n");
+    printf("Just before send..identifier: %hu ,size of buffer:%d \n", ntohs(ip_pkt->id ),sizeof(buffer));
     /*send the packet*/
     send_result = sendto(s, buffer, ETH_FRAME_LEN, 0, 
               (struct sockaddr*)&socket_address, sizeof(socket_address));
@@ -561,7 +591,7 @@ void updateLastVisitedIndex()
 struct payload * preprocessPacket(void * str_from_sock)
 {
     //unsigned char sendbuf[BUFSIZE];
-    void* buffer = (void*)malloc(BUFSIZE);    /*buffer for ethernet frame*/
+    void* buffer = (void*)malloc(BUFSIZE);    /*buffer for ip frame*/
 
     char str[MAX_PAYLOAD_SIZE];
     int n;
@@ -765,21 +795,6 @@ void recievePacketFromRTSock(int rt_sock, int mcast_udp_sock,char * predecessorI
     return;   
 }
 
-void recievePacketFromPGSock(int pg_sock)
-{
-    struct sockaddr pgaddr;
-    int pglen,n;
-    
-    void* buffer = (void*)malloc(BUFSIZE); 
-    pglen = sizeof( struct sockaddr );   
-
-    if((n=recvfrom(pg_sock,buffer, BUFSIZE, 0, &pgaddr, &pglen)>0))
-    {
-
-        printf("Recieved %d bytes from whoever..\n",n );
-    } 
-    return;   
-}
 
 void recieveMulticastMessage( int sockfd )
 {
@@ -869,7 +884,7 @@ int main(int argc, char const *argv[])
     char IPaddress_list[MAX_PAYLOAD_SIZE], IPmulticast_address[INET_ADDRSTRLEN] = "239.108.175.37", host[INET_ADDRSTRLEN];
     char source_address[INET_ADDRSTRLEN];
     int port_number = 17537;
-    fd_set          rset;
+    fd_set          rset,allset;
     int             c, nready;
     struct addrinfo *ai;
     char *h;
@@ -880,7 +895,7 @@ int main(int argc, char const *argv[])
     struct sockaddr_in  servaddr, grpaddr, cliaddr;
      char predecessorIPaddress[INET_ADDRSTRLEN];
      struct hwaddr *HWaddr;
-
+     retrieveOwnCanonicalIPAddress( source_ip_address);
     mcast_udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
 
     bzero(&servaddr, sizeof(servaddr));
@@ -937,19 +952,41 @@ int main(int argc, char const *argv[])
     }    
 
 //    exit(0); 
-
-    FD_ZERO( &rset );
-    maxfd = max( /*pg_sock*/0, rt_sock ) +1;
+    printf("starting seleect procedure \n");
+            FD_ZERO(&allset);
+            FD_ZERO(&rset);
+            FD_SET( rt_sock, &allset );
+           FD_SET( pg_sock, &allset );
+   // FD_ZERO( &rset );
+    maxfd = max( pg_sock, rt_sock ) +1;
    // maxfd = max( maxfd, pg_sock ) + 1;
 
+    ai = Host_serv(source_ip_address, NULL, 0, 0);
+
+    h = Sock_ntop_host(ai->ai_addr, ai->ai_addrlen);
+        /* 4initialize according to protocol */
+    if (ai->ai_family == AF_INET) 
+    {
+        pr = &proto_v4;
+
+    } 
+    else
+        err_quit("unknown address family %d", ai->ai_family);
+
+    pr->sasend = ai->ai_addr;
+    pr->sarecv = Calloc(1, ai->ai_addrlen);
+    pr->salen = ai->ai_addrlen;
+    pr->icmpproto = IPPROTO_ICMP;
+                
+printf("pg_sock %d, rt_sock %d\n",pg_sock, rt_sock);
     for ( ; ; ) 
     {
          //   FD_SET( packet_socket, &rset );
-            FD_SET( rt_sock, &rset );
-           //FD_SET( pg_sock, &rset );
-
+            rset = allset;
+            printf("1\n");
             if( ( nready = select( maxfd, &rset, NULL, NULL, NULL ) ) < 0 )
             {
+                   printf("2\n");
                     if( errno == EINTR )
                     {
                             fputs("Encountered EINTR.. retrying..\n", stdout);
@@ -961,7 +998,7 @@ int main(int argc, char const *argv[])
                             exit(1);
                     }
             }       
-
+               printf("nready: %d\n", nready);
  //           if ( FD_ISSET(packet_socket, &rset)  ) 
    //         {
      //          printf("What the crap is this shit doing here ? \n");     
@@ -977,34 +1014,19 @@ int main(int argc, char const *argv[])
                 pid = IDENTIFIER & 0xffff;  /* ICMP ID field is 16 bits */
                 Signal(SIGALRM, sig_alrm);
 
-                ai = Host_serv(source_ip_address, NULL, 0, 0);
-
-                h = Sock_ntop_host(ai->ai_addr, ai->ai_addrlen);
                 printf("PING %s (%s): %d data bytes\n",
                         ai->ai_canonname ? ai->ai_canonname : h,
                         h, datalen);
 
                     /* 4initialize according to protocol */
-                if (ai->ai_family == AF_INET) 
-                {
-                    pr = &proto_v4;
-
-                } 
-                else
-                    err_quit("unknown address family %d", ai->ai_family);
-
-                pr->sasend = ai->ai_addr;
-                pr->sarecv = Calloc(1, ai->ai_addrlen);
-                pr->salen = ai->ai_addrlen;
-                pr->icmpproto = IPPROTO_ICMP;
                 readloop();
 
             }   
-           // else if( FD_ISSET(pg_sock, &rset) )
-          //  {
-                //printf("Recieving packet from pg_sock..\n");
-               // recievePacketFromPGSock(pg_sock);
-           // } 
+            else if( FD_ISSET(pg_sock, &rset) )
+            {
+                printf("Recieving packet from pg_sock..\n");
+                recievePacketFromPGSock(pg_sock);
+            } 
             /*else if( FD_ISSET(mcast_udp_sock, &rset) )
             {
                 printf("Recieving packet from mcast_udp_sock..\n");

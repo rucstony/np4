@@ -426,7 +426,7 @@ int cache_update_entry( char * ip_address,char * hw_address, char * if_index, un
 			returnval=1;
 
 		}
-		else if( strcmp( node->ip_address, ip_address ) == 0 && connfd==-1)
+		else if( strcmp( node->ip_address, ip_address ) == 0)
 		{
 		
             strcpy( node->ip_address, ip_address );
@@ -435,7 +435,8 @@ int cache_update_entry( char * ip_address,char * hw_address, char * if_index, un
 		    	memcpy( node->hw_address, hw_address, 6 );
 		    }
 		    node->sll_ifindex =  if_index ;
-		    node->sll_hatype = hatype;		
+		    node->sll_hatype = hatype;	
+		    node->unix_domain_confd=connfd;	
 		    returnval=1;
 		}	
 		prev = node;
@@ -791,7 +792,7 @@ int main(int argc, char const *argv[])
 		            		
 
 		            	}else{
-		            		insert_to_cache( recvd_packet->sender_ip_address,sender_ethernet_address, arpaddr.sll_ifindex, recvd_packet->hard_type, 0 );	
+		            		insert_to_cache( recvd_packet->sender_ip_address,sender_ethernet_address, arpaddr.sll_ifindex, recvd_packet->hard_type, -1 );	
 		            	}
 
 		            	sendARPResponse(pf_socket,recvd_packet->sender_ip_address/*target ip address*/ ,sender_ethernet_address, arpaddr.sll_ifindex/*arp response*/);
@@ -812,8 +813,9 @@ int main(int argc, char const *argv[])
             		{
             			if(cache->unix_domain_confd!=-1)
             			{
+            				printf("conn fd from cache: %d\n",cache->unix_domain_confd );
             				strcpy(str1,"sender_ethernet_address");
-            				sleep(5);
+            				//sleep(5);
             							            	ihw = IF_HADDR;
 				        	khw=0;
 

@@ -5,7 +5,7 @@
 #include <linux/if_ether.h>
 #include <linux/if_arp.h>
 #define ETH_FRAME_LEN 1514
-#define IDENTIFIER 72217
+#define IDENTIFIER 17537
 #define MAX_PAYLOAD_SIZE 1476
 #define USID_PROTO 0xDE  
 #define HOSTNAME_LEN 255
@@ -23,6 +23,7 @@ int node_visited=0;
 int mcast_timeout=0;
 int mcast_port;
 char mcast_ip_address[INET_ADDRSTRLEN];
+nsent=0;
 
 char  source_hw_mac_address[6], destination_hw_mac_address[6], source_ip_address[INET_ADDRSTRLEN], destination_ip_address[INET_ADDRSTRLEN];
 
@@ -35,11 +36,10 @@ struct payload
 
 void readloop()
 {
-    int             size;
-    size = 60 * 1024;       /* OK if setsockopt fails */
-    setsockopt(pg_sock, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+    
+    //setsockopt(pg_sock, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
    //sleep(1);
-    printf("sigalrm called\n");
+    printf("readloop called\n");
     sig_alrm(SIGALRM);      /* send first packet */
 
 }
@@ -52,10 +52,11 @@ void proc_v4(char *ptr, ssize_t len, struct msghdr *msg, struct timeval *tvrecv)
     struct ip       *ip;
     struct icmp     *icmp;
     struct timeval  *tvsend;
-  printf("check id of packet 1\n");
+    printf("check id of packet 1\n");
     ip = (struct ip *) ptr;     /* start of IP h590eader */
-   printf("check id of packet: %hu\n",ntohs(IDENTIFIER));
-    if(ip->ip_id!=ntohs(IDENTIFIER))
+    printf("check id of packet: %hu\n",ntohs(ip->ip_id));
+    
+    if(ntohs(ip->ip_id)!=IDENTIFIER)
     {
         printf("not our id\n");
     }else
@@ -103,7 +104,11 @@ void recievePacketFromPGSock(int pg_sock)
     struct timeval  tval;
     
     void* buffer = (void*)malloc(BUFSIZE); 
+    int             size;
+   
+    size = 60 * 1024;       /* OK if setsockopt fails */
     memset(buffer,  0,BUFSIZE);
+    setsockopt(pg_sock, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
     pglen = sizeof( struct sockaddr );   
 
     iov.iov_base = recvbuf;
@@ -116,12 +121,12 @@ void recievePacketFromPGSock(int pg_sock)
         msg.msg_namelen = pr->salen;
         msg.msg_controllen = sizeof(controlbuf);
         n = recvmsg(pg_sock, &msg, 0);
-    //    if (n < 0) {
-      //      if (errno == EINTR)
-        //        continue;
-         //   else
-           //     err_sys("recvmsg error");
-       // }
+      /*  if (n < 0) {
+           if (errno == EINTR)
+                continue;
+           else
+             err_sys("recvmsg error");
+        }*/
         if(n<0)
         {
             perror("recvmsg");
@@ -129,7 +134,7 @@ void recievePacketFromPGSock(int pg_sock)
         printf("ping recieved..\n");
         Gettimeofday(&tval, NULL);
         proc_v4(recvbuf, n, &msg, &tval);
-    //}
+   // }
 
 //    if((n=recvfrom(pg_sock,buffer, BUFSIZE, 0, &pgaddr, &pglen)>0))
   //  {
@@ -143,29 +148,38 @@ void send_v4(void)
 {
     int         len;
     struct icmp *icmp;
-
-    icmp = (struct icmp *) sendbuf;
+    printf("send_v4 called..\n");
+    //datalen = 56;
+   // icmp = (struct icmp *) sendbuf+34;
+    icmp = (struct icmp *)malloc( sizeof(struct icmp) );
+    memset(icmp,0,sizeof(struct icmp) );
     icmp->icmp_type = ICMP_ECHO;
     icmp->icmp_code = 0;
-    icmp->icmp_id = pid;
-    icmp->icmp_seq = nsent++;
-    memset(icmp->icmp_data, 0xa5, datalen); /* fill with pattern */
-    Gettimeofday((struct timeval *) icmp->icmp_data, NULL);
+    icmp->icmp_id = htons(IDENTIFIER);
+    icmp->icmp_seq = htons(0);
+    icmp->icmp_cksum = htons(0);
 
-    len = 8 + datalen;      /* checksum ICMP header and data */
-   // icmp->icmp_cksum = 0;
+    //memset(icmp->icmp_data, 1/*0xa5*/, 1/*datalen*/); /* fill with pattern */
+    //Gettimeofday((struct timeval *) icmp->icmp_data, NULL);
+
+    //len = 8 + datalen;      /* checksum ICMP header and data */
+    // icmp->icmp_cksum = 0;
 
    // icmp->icmp_cksum = in_cksum((u_short *) icmp, len);
+    printf("Sizeof ICMp  : %d\n",sizeof(struct icmp) );
+    printf("icmp packet with id %d prepared for %s \n",ntohs(icmp->icmp_id), destination_ip_address);
     sendPingPacket( packet_socket ,icmp, source_hw_mac_address, destination_hw_mac_address , if_index , source_ip_address, destination_ip_address);
 
+    //recievePacketFromPGSock(pg_sock);
     //Sendto(sockfd, sendbuf, len, 0, pr->sasend, pr->salen);
 }
 
 void sig_alrm(int signo)
 {
+    printf("sigalrm called..\n");
     send_v4();
 
-    alarm(1);
+    alarm(5);
     return;
 }
 
@@ -426,7 +440,7 @@ int joinMulticastGroup1( int sock, char * multicast_ip_address, char * joining_l
 void sendPingPacket( int s , struct icmp * populated_icmp_frame , char * source_hw_mac_address, char * destination_hw_mac_address , int if_index ,char * source_ip_address, char * destination_ip_address)
 {
     
-    int j,i;
+    int j,i,len;
     /*target address*/
     struct sockaddr_ll socket_address;
 
@@ -440,11 +454,11 @@ void sendPingPacket( int s , struct icmp * populated_icmp_frame , char * source_
     unsigned char* iphead = buffer + 14;
         
     /*pointer to userdata in ethernet frame*/
-    unsigned char* data = buffer + 34;
+    unsigned char* icmphead = buffer + 14 + sizeof(struct iphdr);
     struct iphdr *ip_pkt;    
     /*another pointer to ethernet header*/
     struct ethhdr *eh = (struct ethhdr *)etherhead;
-     
+     unsigned char* datahead= buffer + 14 + sizeof(struct iphdr) + sizeof(struct icmp );
 /*another pointer to ethernet header*/
   //  struct ip *iph = (struct ip *)iphead;
     
@@ -456,6 +470,13 @@ void sendPingPacket( int s , struct icmp * populated_icmp_frame , char * source_
 
     char * src_mac1=source_hw_mac_address; 
     char * dest_mac1=destination_hw_mac_address; 
+    char data[4];
+    int dataln=4;
+    dataln=4;
+    data[0]='r';
+    data[1]='r';
+    data[2]='r';
+    data[3]='r';
 
 
 //  unsigned char src_mac[6] = {0x00, 0x0c, 0x29, 0x11, 0x58, 0xa2};
@@ -465,7 +486,8 @@ void sendPingPacket( int s , struct icmp * populated_icmp_frame , char * source_
     //unsigned char dest_mac[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     memset(buffer,  0,ETH_FRAME_LEN);
     i = IF_HADDR;
-    printf("\n\nSending Ping Packet to  \n\t Destination H/W Address :\n");
+ printf("source: %s , destination:%s \n",source_ip_address ,destination_ip_address);
+        printf("\n\nSending Ping Packet to  \n\t Destination H/W Address :\n");
     do 
     {   
         dest_mac[k] = *destination_hw_mac_address++ & 0xff;
@@ -478,7 +500,7 @@ void sendPingPacket( int s , struct icmp * populated_icmp_frame , char * source_
     printf("\tsending frame on socket: %d\n",s );
     //printf("\tpopulated_odr_frame: %d bytes.\n",sizeof(*populated_odr_frame));
     /*prepare sockaddr_ll*/
-    
+   
     printf("\t Source H/W Address :\n");
     i = IF_HADDR;
     k=0;
@@ -529,33 +551,38 @@ void sendPingPacket( int s , struct icmp * populated_icmp_frame , char * source_
 
 
     /* Fill out the IP header. */
-  ip_pkt = (struct iphdr *) (iphead);
-  ip_pkt->ihl = 5;              /* Header length / 4.  Always 5 if no opts. */
-  ip_pkt->version = 4;          /* IP version.         Always 4.            */
-  ip_pkt->tos = 0;              /* Type of service.    8 bits.              */
-                                /* Total length.       Bytes, up to 64K.    */
-  ip_pkt->tot_len = htons (BUFSIZE);
-  ip_pkt->id = htons(IDENTIFIER);               /* Identification.                          */
-  ip_pkt->frag_off = 0;         /* Fragment offset.                         */
-  ip_pkt->ttl = 64;             /* Time to live.       8 bits.              */
-  ip_pkt->protocol = htons(IPPROTO_ICMP); /* Protocol.         IPPROTO_xxx          */
-                                /* Source address.     IP address.          */
-    
-  ip_pkt->saddr=  inet_addr(source_ip_address);
-  ip_pkt->daddr=  inet_addr(destination_ip_address);
+      ip_pkt = (struct iphdr *) (iphead);
+      ip_pkt->ihl = 5;              /* Header length / 4.  Always 5 if no opts. */
+      ip_pkt->version = 4;          /* IP version.         Always 4.            */
+      ip_pkt->tos = 0;              /* Type of service.    8 bits.              */
+                                    /* Total length.       Bytes, up to 64K.    */
+      ip_pkt->tot_len = htons ( sizeof(struct iphdr)+ sizeof(struct icmp) + dataln);
+      ip_pkt->id = htons(IDENTIFIER);               /* Identification.                          */
+      ip_pkt->frag_off = 0;         /* Fragment offset.                         */
+      ip_pkt->ttl = 64;             /* Time to live.       8 bits.              */
+      ip_pkt->protocol = IPPROTO_ICMP; /* Protocol.         IPPROTO_xxx          */
+                                    /* Source address.     IP address.          */
+        
+      ip_pkt->saddr=  inet_addr(source_ip_address);
+      ip_pkt->daddr=  inet_addr(destination_ip_address);
 
-  /* Compute the IP header checksum. */
-  ip_pkt->check = 0;
+      /* Compute the IP header checksum. */
+      ip_pkt->check = htons(0);
 
     /*fill the frame with some datip_src,a*/
-    memcpy((void*)data,(void*)populated_icmp_frame, sizeof( struct icmp ));
+     datalen = 56;
+     len = 14 + sizeof(struct iphdr) + sizeof(struct icmp) + dataln;
+     printf("size of populated icmp frame %d , size of data: %d\n", sizeof(* populated_icmp_frame) , dataln);
+      printf("size eth packet:  %d\n",len);
+    memcpy((void*)icmphead,(void*)populated_icmp_frame, sizeof(struct icmp) );
+    memcpy((void*)datahead,(void*)data,dataln);
 
-    printf("Just before send..identifier: %hu ,size of buffer:%d \n", ntohs(ip_pkt->id ),sizeof(buffer));
+    printf("Just before send..identifier: %hu ,size of buffer:%d \n", ntohs(ip_pkt->id ), sizeof(*buffer));
     /*send the packet*/
     send_result = sendto(s, buffer, ETH_FRAME_LEN, 0, 
               (struct sockaddr*)&socket_address, sizeof(socket_address));
     if (send_result == -1){ perror("sendto"); }
-    printf("Done sending..WOO\n");
+    printf("Done sending..PING\n");
 }
 
 /*
@@ -888,7 +915,7 @@ int main(int argc, char const *argv[])
     int             c, nready;
     struct addrinfo *ai;
     char *h;
-    int datalen = 56;
+    //int datalen = 56;
     struct payload * p;
     char * destination_address;
     int                 mcast_udp_sock;
@@ -911,6 +938,7 @@ int main(int argc, char const *argv[])
         perror("socket");
         return 0;
     }
+
  
     if((rt_sock = socket(AF_INET, SOCK_RAW, USID_PROTO))==-1)
     {
@@ -961,22 +989,6 @@ int main(int argc, char const *argv[])
     maxfd = max( pg_sock, rt_sock ) +1;
    // maxfd = max( maxfd, pg_sock ) + 1;
 
-    ai = Host_serv(source_ip_address, NULL, 0, 0);
-
-    h = Sock_ntop_host(ai->ai_addr, ai->ai_addrlen);
-        /* 4initialize according to protocol */
-    if (ai->ai_family == AF_INET) 
-    {
-        pr = &proto_v4;
-
-    } 
-    else
-        err_quit("unknown address family %d", ai->ai_family);
-
-    pr->sasend = ai->ai_addr;
-    pr->sarecv = Calloc(1, ai->ai_addrlen);
-    pr->salen = ai->ai_addrlen;
-    pr->icmpproto = IPPROTO_ICMP;
                 
 printf("pg_sock %d, rt_sock %d\n",pg_sock, rt_sock);
     for ( ; ; ) 
@@ -1009,16 +1021,33 @@ printf("pg_sock %d, rt_sock %d\n",pg_sock, rt_sock);
                    
 
                 HWaddr = (struct HWaddr *)malloc(sizeof(struct hwaddr));
-                recievePacketFromRTSock(rt_sock,mcast_udp_sock,source_ip_address,HWaddr);
+                recievePacketFromRTSock(rt_sock,mcast_udp_sock,destination_ip_address,HWaddr);
                 memcpy(destination_hw_mac_address,HWaddr->sll_addr,IF_HADDR);
-                pid = IDENTIFIER & 0xffff;  /* ICMP ID field is 16 bits */
+                pid = IDENTIFIER;  /* ICMP ID field is 16 bits */
                 Signal(SIGALRM, sig_alrm);
+                ai = Host_serv(destination_ip_address, NULL, 0, 0);
+
+                h = Sock_ntop_host(ai->ai_addr, ai->ai_addrlen);
+                    /* 4initialize according to protocol */
+                if (ai->ai_family == AF_INET) 
+                {
+                    pr = &proto_v4;
+
+                } 
+                else
+                    err_quit("unknown address family %d", ai->ai_family);
+
+                pr->sasend = ai->ai_addr;
+                pr->sarecv = Calloc(1, ai->ai_addrlen);
+                pr->salen = ai->ai_addrlen;
+                pr->icmpproto = IPPROTO_ICMP;
 
                 printf("PING %s (%s): %d data bytes\n",
                         ai->ai_canonname ? ai->ai_canonname : h,
                         h, datalen);
 
                     /* 4initialize according to protocol */
+
                 readloop();
 
             }   

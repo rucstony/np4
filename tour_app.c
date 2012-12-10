@@ -896,7 +896,11 @@ void recievePacketFromRTSock(int rt_sock, int mcast_udp_sock,char * predecessorI
             HWaddr->sll_hatype = ARPHRD_ETHER;
             HWaddr->sll_halen = 6;
 
-            areq ((struct sockaddr *)&pgaddr, pglen, HWaddr);
+            if( areq ((struct sockaddr *)&pgaddr, pglen, HWaddr) == -1)
+            {
+                printf("Failed AREQ call..\n");
+                exit(0);
+            }    
           
 
                 ihw = IF_HADDR;
@@ -1143,6 +1147,7 @@ int main(int argc, char const *argv[])
     printf("pg_sock %d, rt_sock %d, mcast_udp_sock : %d\n",pg_sock, rt_sock,mcast_udp_sock);
     for ( ; ; ) 
     {
+            printf("AT SELECT\n");
             rset = allset;
             if( ( nready = select( maxfd, &rset, NULL, NULL, NULL ) ) < 0 )
             {

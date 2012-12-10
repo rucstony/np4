@@ -33,7 +33,7 @@ FLAGS = -w -g -O2
 CFLAGS = ${FLAGS} -I/home/users/cse533/Stevens/unpv13e/lib
 
 
-all: arp tour_app
+all: akjose_arp akjose_tour
 #	get_hw_addrs.o prhwaddrs.o ${CC} -o prhwaddrs prhwaddrs.o get_hw_addrs.o ${LIBS}
 
 #app_functions.o: app_functions.c
@@ -45,17 +45,17 @@ get_hw_addrs.o: get_hw_addrs.c
 arp_api.o: arp_api.c
 	${CC} ${CFLAGS} -c arp_api.c
 
-arp: arp.o get_hw_addrs.o arp_api.o
-	${CC} ${FLAGS} -o arp arp.o get_hw_addrs.o arp_api.o ${LIBS}
+akjose_arp: arp.o get_hw_addrs.o arp_api.o
+	${CC} ${FLAGS} -o akjose_arp arp.o get_hw_addrs.o arp_api.o ${LIBS}
 arp.o: arp.c
 	${CC} ${CFLAGS} -c arp.c
 
-tour_app: tour_app.o get_hw_addrs.o arp_api.o
-	${CC} ${FLAGS} -o tour_app tour_app.o get_hw_addrs.o arp_api.o ${LIBS}
+akjose_tour: tour_app.o get_hw_addrs.o arp_api.o
+	${CC} ${FLAGS} -o akjose_tour tour_app.o get_hw_addrs.o arp_api.o ${LIBS}
 tour_app.o: tour_app.c
 	${CC} ${CFLAGS} -c tour_app.c
 
 	
 clean:
-	rm arp arp.o get_hw_addrs.o arp_api.o
+	rm akjose_arp arp.o get_hw_addrs.o arp_api.o akjose_tour
 

@@ -861,10 +861,11 @@ void recievePacketFromRTSock(int rt_sock, int mcast_udp_sock,char * predecessorI
             retrieveOwnCanonicalIPAddress( source_address );
             retrieveOwnCanonicalIPAddress( source_ip_address);
 
-            processed_recieved_payload->last_visited_index = htons(processed_recieved_payload->last_visited_index);
             
             strcpy( destination_address,retrieveNextTourIpAddress(processed_recieved_payload->IPaddress_list,processed_recieved_payload->last_visited_index));
             printf("Next IP on route is : %s\n",destination_address );
+
+            processed_recieved_payload->last_visited_index = htons(processed_recieved_payload->last_visited_index);
             sendTourPacket( rt_sock, processed_recieved_payload, destination_address,source_address );
 
         }    

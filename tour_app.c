@@ -25,6 +25,9 @@ int mcast_port;
 char mcast_ip_address[INET_ADDRSTRLEN];
 int end_of_tour = 0;
 int echo_reply_count = 0;
+int visited_on_tour_atleast_once = 0;
+int same_predecessor = 0;
+
 
 nsent=0;
 
@@ -36,6 +39,13 @@ struct payload
     char IPaddress_list[MAX_PAYLOAD_SIZE];
     int last_visited_index;
 };
+
+struct ping_list
+{
+    char IPaddress[INET_ADDRSTRLEN];
+    struct ping_list * next;
+}*pl_head,*pl_tmp;
+
 
 void readloop()
 {
@@ -757,10 +767,55 @@ int retrieveInterfaceIndexFromIP( char * IPaddress )
     return -1;  
 }
 
+
+void ping_list_insert( char * IPaddress )
+{
+
+    struct ping_list *node = (struct ping_list *)malloc( sizeof(struct ping_list) );
+
+    strcpy( node->IPaddress, IPaddress );
+
+    if( pl_head == NULL )
+    {
+      pl_head = node;
+      pl_head->next = NULL;         
+    } 
+    else if( pl_head->next == NULL )
+    {
+      pl_head->next = node;
+      node->next = NULL;            
+    } 
+    else
+    {
+      pl_tmp = pl_head->next;       
+      pl_head->next = node;
+      node->next = pl_tmp;            
+    } 
+    return;
+ }
+
+
+struct ping_list * ping_list_lookup( char * IPaddress )
+{
+    struct ping_list *node;     
+
+    node = pl_head;
+    while( node != NULL )
+    {
+        if( strcmp(node->IPaddress, IPaddress) == 0 )
+        {
+            return node;
+        }   
+        node = node->next;
+    }
+    return NULL;    
+}
+
+
 void recievePacketFromRTSock(int rt_sock, int mcast_udp_sock,char * predecessorIPaddress,struct hwaddr * HWaddr)
 {
     struct sockaddr_ll rtaddr;
-    char source_address[INET_ADDRSTRLEN], hostname[HOSTNAME_LEN];
+    char source_address[INET_ADDRSTRLEN], hostname[HOSTNAME_LEN], destination_address[INET_ADDRSTRLEN];
     int rtlen, n,ihw,khw;
     time_t ticks;
     struct sockaddr_in pgaddr;
@@ -775,66 +830,82 @@ void recievePacketFromRTSock(int rt_sock, int mcast_udp_sock,char * predecessorI
     if((n=recvfrom(rt_sock,buffer, BUFSIZE, 0, &rtaddr, &rtlen)>0))
     {
         printf("Recieved from whoever on interface %d.\n",rtaddr.sll_ifindex );
-       
+        
+        
         printf("interface to use for sending: %d",retrieveInterfaceIndexFromIP(source_ip_address));
          memcpy(source_hw_mac_address,retrieveMacFromInterfaceIndex( retrieveInterfaceIndexFromIP(source_ip_address)),6);
         processed_recieved_payload = preprocessPacket(buffer);
-        handleMulticastjoining(mcast_udp_sock, processed_recieved_payload);
- 
+        
+        if(visited_on_tour_atleast_once == 0)
+        {   
+            handleMulticastjoining(mcast_udp_sock, processed_recieved_payload);
+            visited_on_tour_atleast_once = 1;
+        }
+
         if( checkIfEndOfTour( processed_recieved_payload->IPaddress_list, processed_recieved_payload->last_visited_index ) == 1 )
         {
             printf("We have reached the end of the tour.. Time to start the multicast (after 5 pings are done)..\n");
             end_of_tour = 1; 
         }    
+        else
+        {
+            processed_recieved_payload->last_visited_index += 1;
+         
+            retrieveOwnCanonicalIPAddress( source_address );
+            retrieveOwnCanonicalIPAddress( source_ip_address);
+
+            processed_recieved_payload->last_visited_index = htons(processed_recieved_payload->last_visited_index);
+            
+            strcpy( destination_address,retrieveNextTourIpAddress(processed_recieved_payload->IPaddress_list,processed_recieved_payload->last_visited_index));
+            printf("Next IP on route is : %s\n",destination_address );
+            sendTourPacket( rt_sock, processed_recieved_payload, destination_address,source_address );
+
+        }    
 
         strcpy(predecessorIPaddress,retrievePredecessorNodeIPaddress( processed_recieved_payload ));
         printf("Predecessor IP (Must ping to this address): %s \n",predecessorIPaddress );    
-        
-        bzero( &pgaddr, sizeof( pgaddr ) );
-        pgaddr.sin_family = AF_INET;
-        pgaddr.sin_port = htons( 0 );
-
-        inet_pton( AF_INET, predecessorIPaddress,(struct in_addr *) &pgaddr.sin_addr);
-
-        pglen = sizeof(pgaddr);
-
-        HWaddr->sll_ifindex = 1;
-        if_index=retrieveInterfaceIndexFromIP(source_ip_address);
-        HWaddr->sll_hatype = ARPHRD_ETHER;
-        HWaddr->sll_halen = 6;
-
-        areq ((struct sockaddr *)&pgaddr, pglen, HWaddr);
-      
-
-            ihw = IF_HADDR;
-            khw=0;
-            printf("returned  from areq..\n" );
-        
-            do 
-            {  
-                
-                printf("%.2x%s", HWaddr->sll_addr[khw] & 0xff, (ihw == 1) ? " " : ":");
-                khw++;
-            } while (--ihw > 0);
-           
-  printf("returned  from areq..\n" );
-        
-       /* 
-        checkIfIdentifierValid();
-        retrieveHostName( source_address, hostname );
-
-        ticks = time(NULL);
-        printf("%.24s received source routing packet from %s\n",ctime(&ticks), hostname );
-   
-        if( node_visited != 1 )
+       
+        if( ping_list_lookup(predecessorIPaddress) != NULL)
         {
-            joinMulticastGroup();
-            //initiate PINGING here.
+            printf("Node was visited before by this predecessor.Must avoid pings. \n");
+            same_predecessor=1;                
         }    
-        updateLastVisitedIndex();       
-        
-        sendTourPacket();    
-        */
+        else
+        {
+            ping_list_insert( predecessorIPaddress );
+        }    
+
+        if( same_predecessor == 0 )
+        {
+            bzero( &pgaddr, sizeof( pgaddr ) );
+            pgaddr.sin_family = AF_INET;
+            pgaddr.sin_port = htons( 0 );
+
+            inet_pton( AF_INET, predecessorIPaddress,(struct in_addr *) &pgaddr.sin_addr);
+
+            pglen = sizeof(pgaddr);
+
+            HWaddr->sll_ifindex = 1;
+            if_index=retrieveInterfaceIndexFromIP(source_ip_address);
+            HWaddr->sll_hatype = ARPHRD_ETHER;
+            HWaddr->sll_halen = 6;
+
+            areq ((struct sockaddr *)&pgaddr, pglen, HWaddr);
+          
+
+                ihw = IF_HADDR;
+                khw=0;
+                printf("returned  from areq..\n" );
+            
+                do 
+                {  
+                    
+                    printf("%.2x%s", HWaddr->sll_addr[khw] & 0xff, (ihw == 1) ? " " : ":");
+                    khw++;
+                } while (--ihw > 0);
+               
+            printf("returned  from areq..\n" );
+        } 
     } 
     return;   
 }
@@ -1029,6 +1100,17 @@ int main(int argc, char const *argv[])
     
     if( argc > 1 )
     {    
+        mcast_port = 17537;
+        strcpy( mcast_ip_address, "239.108.175.37");
+        bzero(&servaddr, sizeof(servaddr));
+        servaddr.sin_family      = AF_INET;
+        servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+        servaddr.sin_port        = htons(mcast_port);
+
+        bind(mcast_udp_sock, (SA *) &servaddr, sizeof(servaddr));
+        joinMulticastGroup( mcast_udp_sock, mcast_ip_address );
+
+
         if( createIPTourString(IPaddress_list, argv, IPmulticast_address, port_number) == -1 )
         {
             printf("Error : Same node should not appear consequentively in the tour list..Exiting..\n");
@@ -1040,7 +1122,7 @@ int main(int argc, char const *argv[])
         p = createPayload( IPaddress_list );
         retrieveOwnCanonicalIPAddress( source_address );
         retrieveOwnCanonicalIPAddress( source_ip_address);
-        destination_address =  retrieveNextTourIpAddress(IPaddress_list,0);
+        destination_address = retrieveNextTourIpAddress(IPaddress_list,0);
         sendTourPacket( rt_sock, p, destination_address,source_address );
 
     }    
@@ -1082,33 +1164,37 @@ int main(int argc, char const *argv[])
 
                 HWaddr = (struct HWaddr *)malloc(sizeof(struct hwaddr));
                 recievePacketFromRTSock(rt_sock,mcast_udp_sock,destination_ip_address,HWaddr);
-                memcpy(destination_hw_mac_address,HWaddr->sll_addr,IF_HADDR);
-                pid = IDENTIFIER;  /* ICMP ID field is 16 bits */
-                Signal(SIGALRM, sig_alrm);
-                ai = Host_serv(destination_ip_address, NULL, 0, 0);
-
-                h = Sock_ntop_host(ai->ai_addr, ai->ai_addrlen);
-                    /* 4initialize according to protocol */
-                if (ai->ai_family == AF_INET) 
+                
+                if( same_predecessor == 0 )
                 {
-                    pr = &proto_v4;
+                    memcpy(destination_hw_mac_address,HWaddr->sll_addr,IF_HADDR);
+                    pid = IDENTIFIER;  /* ICMP ID field is 16 bits */
+                    Signal(SIGALRM, sig_alrm);
+                    ai = Host_serv(destination_ip_address, NULL, 0, 0);
 
-                } 
-                else
-                    err_quit("unknown address family %d", ai->ai_family);
+                    h = Sock_ntop_host(ai->ai_addr, ai->ai_addrlen);
+                        /* 4initialize according to protocol */
+                    if (ai->ai_family == AF_INET) 
+                    {
+                        pr = &proto_v4;
 
-                pr->sasend = ai->ai_addr;
-                pr->sarecv = Calloc(1, ai->ai_addrlen);
-                pr->salen = ai->ai_addrlen;
-                pr->icmpproto = IPPROTO_ICMP;
+                    } 
+                    else
+                        err_quit("unknown address family %d", ai->ai_family);
 
-                printf("PING %s (%s): %d data bytes\n",
-                        ai->ai_canonname ? ai->ai_canonname : h,
-                        h, datalen);
+                    pr->sasend = ai->ai_addr;
+                    pr->sarecv = Calloc(1, ai->ai_addrlen);
+                    pr->salen = ai->ai_addrlen;
+                    pr->icmpproto = IPPROTO_ICMP;
 
-                    /* 4initialize according to protocol */
+                    printf("PING %s (%s): %d data bytes\n",
+                            ai->ai_canonname ? ai->ai_canonname : h,
+                            h, datalen);
 
- //               readloop();
+                        /* 4initialize according to protocol */
+
+                    //readloop();
+                }    
                 echo_reply_count = 5;
                  if( (end_of_tour == 1) && (echo_reply_count >= 5)  )
                  {

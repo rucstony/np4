@@ -297,9 +297,7 @@ char * retrieveNextTourIpAddress( char * IPaddress_list, int last_visited_index 
     char * p;
     char IP_iterator[MAX_PAYLOAD_SIZE];
     strcpy(IP_iterator,IPaddress_list);
-    printf("%s\n",IP_iterator );
     p = strtok( IP_iterator,"|" );
-    printf("Last visited index : %d\n",last_visited_index );
     if( last_visited_index == -1 || last_visited_index == 256 )
     {
         return p;
@@ -311,8 +309,6 @@ char * retrieveNextTourIpAddress( char * IPaddress_list, int last_visited_index 
         printf("Index : %d\n",i );
         p = strtok( NULL,"|" );         
     }    
- 
-    printf("Next IP address to be sent to : %s\n", p);
  
     return p;
 }
@@ -338,8 +334,6 @@ int  retrieveMulticastIpAddress( char * IPaddress_list, char * multicast_ip, int
     p = strtok(prev,":");
     port = atoi( strtok(NULL, ":") );
 
-    printf("Multicast Address to  : %s\n", prev);
-    printf("Port number : %d\n", port );
     strcpy(multicast_ip,prev);
     *port_pointer = port;
     return 1;
@@ -354,6 +348,7 @@ void sendTourPacket( int sockfd, struct payload * p, char * destination_address,
     socklen_t       servlen;
     struct sockaddr_in servaddr;
     struct in_addr ip_src, ip_dst; 
+    int send_result=0;
     /* Pointer to beginning of payload */
     unsigned char sendbuf[BUFSIZE];
 
@@ -409,8 +404,8 @@ void sendTourPacket( int sockfd, struct payload * p, char * destination_address,
     //memcpy((void *)&iph->ip_src,(void *)&ip_src,sizeof(struct in_addr));
     //memcpy((void *)&iph->ip_dst,(void *)&ip_dst,sizeof(struct in_addr));
    // inet_pton(AF_INET, destination_address, (struct in_addr *)&daddr.sin_addr.s_addr);
-    printf("size of payload: %d\n", sizeof(struct payload));        
-     printf("size of payload: %s\n", p->IPaddress_list);       
+   // printf("size of payload: %d\n", sizeof(struct payload));        
+   //  printf("size of payload: %s\n", p->IPaddress_list);       
     memcpy( (void *)data,(void *)p,sizeof(struct payload) ); 
    // len = sizeof(*sendbuf);
 
@@ -421,13 +416,12 @@ void sendTourPacket( int sockfd, struct payload * p, char * destination_address,
     inet_pton( AF_INET, destination_address,(struct in_addr *) &servaddr.sin_addr);
 
 
-    printf("IP: %s",inet_ntop(AF_INET,&servaddr.sin_addr,str,100));
+ //   printf("IP: %s",inet_ntop(AF_INET,&servaddr.sin_addr,str,100));
     servlen = sizeof(servaddr);
 
-    printf("Sending tour packet to %s from source : %s \n", destination_address, source_address);
-    sendto(sockfd, sendbuf, BUFSIZE, 0, &servaddr, servlen);
-    perror("sendto");
-    printf("DONE SENDINGS WOOOO.\n");
+    printf("SENDING tour packet to %s from source : %s \n", destination_address, source_address);
+    send_result = sendto(sockfd, sendbuf, BUFSIZE, 0, &servaddr, servlen);
+    if (send_result == -1){ perror("sendto"); }
 
 }
 
@@ -695,8 +689,9 @@ char * retrievePredecessorNodeIPaddress( struct payload * processed_received_pay
 {
     /* The predecessor can be obtained by returning the 'NextTourIPaddress using last_visited_index -1 .. wooo' */
     char IPaddress[INET_ADDRSTRLEN];
+    int last_visited_index =  processed_received_payload->last_visited_index;
 
-    strcpy(IPaddress ,retrieveNextTourIpAddress( processed_received_payload->IPaddress_list, processed_received_payload->last_visited_index -2 ));
+    strcpy(IPaddress ,retrieveNextTourIpAddress( processed_received_payload->IPaddress_list, last_visited_index -2 ));
     return IPaddress;
 }
 
@@ -832,7 +827,7 @@ void recievePacketFromRTSock(int rt_sock, int mcast_udp_sock,char * predecessorI
     rtlen = sizeof( struct sockaddr );   
     if((n=recvfrom(rt_sock,buffer, BUFSIZE, 0, &rtaddr, &rtlen)>0))
     {
-        printf("Recieved from whoever on interface %d.\n",rtaddr.sll_ifindex );
+        printf("RECIEVED A TOUR PACKET on interface %d.\n",rtaddr.sll_ifindex );
         
         
         printf("interface to use for sending: %d",retrieveInterfaceIndexFromIP(source_ip_address));
@@ -869,9 +864,11 @@ void recievePacketFromRTSock(int rt_sock, int mcast_udp_sock,char * predecessorI
             sendTourPacket( rt_sock, processed_recieved_payload, destination_address,source_address );
 
         }    
+        
+        if( end_of_tour == 0 )
+            processed_recieved_payload->last_visited_index = ntohs(processed_recieved_payload->last_visited_index);
 
         strcpy(predecessorIPaddress,retrievePredecessorNodeIPaddress( processed_recieved_payload ));
-        printf("Last visited index %d \n", processed_recieved_payload->last_visited_index );
         printf("Predecessor IP (Must ping to this address): %s \n",predecessorIPaddress );    
        
         if( ping_list_lookup(predecessorIPaddress) != NULL)

@@ -35,21 +35,21 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
     strcpy(unixaddr.sun_path, UNIXDG_PATH);
 
     // unlink(UNIXDG_PATH);
-    printf("sun path: %s\n",unixaddr.sun_path);
+  //  printf("sun path: %s\n",unixaddr.sun_path);
        len = strlen(unixaddr.sun_path) + sizeof(unixaddr.sun_family);
-      printf("IP recieved in areq: %s\n", Sock_ntop_host(IPaddr, sizeof(struct sockaddr)));
+    //  printf("IP recieved in areq: %s\n", Sock_ntop_host(IPaddr, sizeof(struct sockaddr)));
     
     strcpy(ip_address,Sock_ntop_host(IPaddr, sizeof(*IPaddr)));
 
-    printf("bound %d\n",unix_domain_socket);
+    //printf("bound %d\n",unix_domain_socket);
     if(connect(unix_domain_socket, (struct sockaddr_un *) &unixaddr, len)<0)
     {     perror("connect");
             exit(1);
     }
-    printf("connected\n");
+    //printf("connected\n");
 
 
-    printf("1\n");
+   // printf("1\n");
    // inet_ntop( AF_INET, (IPaddr->sin_addr), ip_address, INET_ADDRSTRLEN );
 
    // printf("areq() called for IP address: %s\n",ip_address );
@@ -57,7 +57,7 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
                                           HWaddr->sll_ifindex,
                                           HWaddr->sll_hatype,
                                           HWaddr->sll_halen);
-     printf("1\n");
+     //printf("1\n");
 //    printf("%s\n", output_to_sock);
 
     
@@ -91,10 +91,10 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
     }   
     if (FD_ISSET(unix_domain_socket, &rset)) 
     { 
-    printf("in areq:readable \n");
+    //printf("in areq:readable \n");
         if((n=read(unix_domain_socket,str_from_sock,MAXLINE))>0)
         {
-          printf("entering if\n");
+      //    printf("entering if\n");
             alarm(0);
 
            n= sizeof(str_from_sock);
@@ -111,7 +111,7 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
                 printf("%.2x%s", HWaddr->sll_addr[khw] & 0xff, (ihw == 1) ? " " : ":");
                 khw++;
             } while (--ihw > 0);
-           printf("done...\n");
+        //   printf("done...\n");
            close(unix_domain_socket);
            return 1; 
 

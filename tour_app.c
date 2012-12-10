@@ -696,7 +696,7 @@ char * retrievePredecessorNodeIPaddress( struct payload * processed_received_pay
     /* The predecessor can be obtained by returning the 'NextTourIPaddress using last_visited_index -1 .. wooo' */
     char IPaddress[INET_ADDRSTRLEN];
 
-    strcpy(IPaddress ,retrieveNextTourIpAddress( processed_received_payload->IPaddress_list, processed_received_payload->last_visited_index - 1  ));
+    strcpy(IPaddress ,retrieveNextTourIpAddress( processed_received_payload->IPaddress_list, processed_received_payload->last_visited_index -2 ));
     return IPaddress;
 }
 
@@ -870,6 +870,7 @@ void recievePacketFromRTSock(int rt_sock, int mcast_udp_sock,char * predecessorI
         }    
 
         strcpy(predecessorIPaddress,retrievePredecessorNodeIPaddress( processed_recieved_payload ));
+        printf("Last visited index %d \n", processed_recieved_payload->last_visited_index );
         printf("Predecessor IP (Must ping to this address): %s \n",predecessorIPaddress );    
        
         if( ping_list_lookup(predecessorIPaddress) != NULL)
@@ -1072,13 +1073,6 @@ int main(int argc, char const *argv[])
      struct hwaddr *HWaddr;
      retrieveOwnCanonicalIPAddress( source_ip_address);
     mcast_udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
-
-  //  bzero(&servaddr, sizeof(servaddr));
-  //  servaddr.sin_family      = AF_INET;
-  //  servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-  //  servaddr.sin_port        = htons(17537);
-
-//    bind(mcast_udp_sock, (SA *) &servaddr, sizeof(servaddr));
 
     if((packet_socket = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_IP) ) )==-1)
     {

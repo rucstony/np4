@@ -23,6 +23,12 @@ int node_visited=0;
 int mcast_timeout=0;
 int mcast_port;
 char mcast_ip_address[INET_ADDRSTRLEN];
+int end_of_tour = 0;
+int echo_reply_count = 0;
+int visited_on_tour_atleast_once = 0;
+int same_predecessor = 0;
+
+
 nsent=0;
 
 char  source_hw_mac_address[6], destination_hw_mac_address[6], source_ip_address[INET_ADDRSTRLEN], destination_ip_address[INET_ADDRSTRLEN];
@@ -33,6 +39,13 @@ struct payload
     char IPaddress_list[MAX_PAYLOAD_SIZE];
     int last_visited_index;
 };
+
+struct ping_list
+{
+    char IPaddress[INET_ADDRSTRLEN];
+    struct ping_list * next;
+}*pl_head,*pl_tmp;
+
 
 void readloop()
 {
@@ -286,8 +299,8 @@ char * retrieveNextTourIpAddress( char * IPaddress_list, int last_visited_index 
     strcpy(IP_iterator,IPaddress_list);
     printf("%s\n",IP_iterator );
     p = strtok( IP_iterator,"|" );
-
-    if( last_visited_index == -1 )
+    printf("Last visited index : %d\n",last_visited_index );
+    if( last_visited_index == -1 || last_visited_index == 256 )
     {
         return p;
     }    
@@ -295,9 +308,12 @@ char * retrieveNextTourIpAddress( char * IPaddress_list, int last_visited_index 
     {
 
         printf("%s\n",p );
+        printf("Index : %d\n",i );
         p = strtok( NULL,"|" );         
     }    
-   // printf("Next IP address to be sent to : %s\n", p);
+ 
+    printf("Next IP address to be sent to : %s\n", p);
+ 
     return p;
 }
 
@@ -308,7 +324,11 @@ int  retrieveMulticastIpAddress( char * IPaddress_list, char * multicast_ip, int
 {
     int i;
     char * p,* prev, * port;
-    p = strtok( IPaddress_list,"|" );
+    char IP_iterator[MAX_PAYLOAD_SIZE];
+
+    strcpy(IP_iterator, IPaddress_list);
+    p = strtok( IP_iterator,"|" );
+
 
     while( p != NULL )
     {
@@ -682,11 +702,15 @@ char * retrievePredecessorNodeIPaddress( struct payload * processed_received_pay
 
 void handleMulticastjoining( int mcast_udp_sock, struct payload * processed_received_payload )
 {
-    char multicast_ip[INET_ADDRSTRLEN];
-    int port_number;
-    
-    retrieveMulticastIpAddress( processed_received_payload->IPaddress_list, multicast_ip, &port_number );
-    joinMulticastGroup( mcast_udp_sock, multicast_ip );
+    struct sockaddr_in servaddr;
+    retrieveMulticastIpAddress( processed_received_payload->IPaddress_list, mcast_ip_address, &mcast_port );
+    bzero(&servaddr, sizeof(servaddr));
+    servaddr.sin_family      = AF_INET;
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    servaddr.sin_port        = htons(mcast_port);
+
+    bind(mcast_udp_sock, (SA *) &servaddr, sizeof(servaddr));
+    joinMulticastGroup( mcast_udp_sock, mcast_ip_address );
 
 }
 /*
@@ -746,10 +770,55 @@ int retrieveInterfaceIndexFromIP( char * IPaddress )
     return -1;  
 }
 
+
+void ping_list_insert( char * IPaddress )
+{
+
+    struct ping_list *node = (struct ping_list *)malloc( sizeof(struct ping_list) );
+
+    strcpy( node->IPaddress, IPaddress );
+
+    if( pl_head == NULL )
+    {
+      pl_head = node;
+      pl_head->next = NULL;         
+    } 
+    else if( pl_head->next == NULL )
+    {
+      pl_head->next = node;
+      node->next = NULL;            
+    } 
+    else
+    {
+      pl_tmp = pl_head->next;       
+      pl_head->next = node;
+      node->next = pl_tmp;            
+    } 
+    return;
+ }
+
+
+struct ping_list * ping_list_lookup( char * IPaddress )
+{
+    struct ping_list *node;     
+
+    node = pl_head;
+    while( node != NULL )
+    {
+        if( strcmp(node->IPaddress, IPaddress) == 0 )
+        {
+            return node;
+        }   
+        node = node->next;
+    }
+    return NULL;    
+}
+
+
 void recievePacketFromRTSock(int rt_sock, int mcast_udp_sock,char * predecessorIPaddress,struct hwaddr * HWaddr)
 {
     struct sockaddr_ll rtaddr;
-    char source_address[INET_ADDRSTRLEN], hostname[HOSTNAME_LEN];
+    char source_address[INET_ADDRSTRLEN], hostname[HOSTNAME_LEN], destination_address[INET_ADDRSTRLEN];
     int rtlen, n,ihw,khw;
     time_t ticks;
     struct sockaddr_in pgaddr;
@@ -764,60 +833,86 @@ void recievePacketFromRTSock(int rt_sock, int mcast_udp_sock,char * predecessorI
     if((n=recvfrom(rt_sock,buffer, BUFSIZE, 0, &rtaddr, &rtlen)>0))
     {
         printf("Recieved from whoever on interface %d.\n",rtaddr.sll_ifindex );
-       
+        
+        
         printf("interface to use for sending: %d",retrieveInterfaceIndexFromIP(source_ip_address));
          memcpy(source_hw_mac_address,retrieveMacFromInterfaceIndex( retrieveInterfaceIndexFromIP(source_ip_address)),6);
         processed_recieved_payload = preprocessPacket(buffer);
-        handleMulticastjoining(mcast_udp_sock, processed_recieved_payload);
         
+        /* UPDATE LAST VISITED INDEX */
+        processed_recieved_payload->last_visited_index += 1;
+        
+        if(visited_on_tour_atleast_once == 0)
+        {   
+            handleMulticastjoining(mcast_udp_sock, processed_recieved_payload);
+            visited_on_tour_atleast_once = 1;
+        }
+        
+
+        if( checkIfEndOfTour( processed_recieved_payload->IPaddress_list, processed_recieved_payload->last_visited_index ) == 1 )
+        {
+            printf("We have reached the end of the tour.. Time to start the multicast (after 5 pings are done)..\n");
+            end_of_tour = 1; 
+        }    
+        else
+        {
+            printf("New Updated last_visited_index - %d\n",processed_recieved_payload->last_visited_index );
+         
+            retrieveOwnCanonicalIPAddress( source_address );
+            retrieveOwnCanonicalIPAddress( source_ip_address);
+
+            processed_recieved_payload->last_visited_index = htons(processed_recieved_payload->last_visited_index);
+            
+            strcpy( destination_address,retrieveNextTourIpAddress(processed_recieved_payload->IPaddress_list,processed_recieved_payload->last_visited_index));
+            printf("Next IP on route is : %s\n",destination_address );
+            sendTourPacket( rt_sock, processed_recieved_payload, destination_address,source_address );
+
+        }    
+
         strcpy(predecessorIPaddress,retrievePredecessorNodeIPaddress( processed_recieved_payload ));
         printf("Predecessor IP (Must ping to this address): %s \n",predecessorIPaddress );    
-        
-        bzero( &pgaddr, sizeof( pgaddr ) );
-        pgaddr.sin_family = AF_INET;
-        pgaddr.sin_port = htons( 0 );
-
-        inet_pton( AF_INET, predecessorIPaddress,(struct in_addr *) &pgaddr.sin_addr);
-
-        pglen = sizeof(pgaddr);
-
-        HWaddr->sll_ifindex = 1;
-        if_index=retrieveInterfaceIndexFromIP(source_ip_address);
-        HWaddr->sll_hatype = ARPHRD_ETHER;
-        HWaddr->sll_halen = 6;
-
-        areq ((struct sockaddr *)&pgaddr, pglen, HWaddr);
-      
-
-            ihw = IF_HADDR;
-            khw=0;
-            printf("returned  from areq..\n" );
-        
-            do 
-            {  
-                
-                printf("%.2x%s", HWaddr->sll_addr[khw] & 0xff, (ihw == 1) ? " " : ":");
-                khw++;
-            } while (--ihw > 0);
-           
-  printf("returned  from areq..\n" );
-        
-       /* 
-        checkIfIdentifierValid();
-        retrieveHostName( source_address, hostname );
-
-        ticks = time(NULL);
-        printf("%.24s received source routing packet from %s\n",ctime(&ticks), hostname );
-   
-        if( node_visited != 1 )
+       
+        if( ping_list_lookup(predecessorIPaddress) != NULL)
         {
-            joinMulticastGroup();
-            //initiate PINGING here.
+            printf("Node was visited before by this predecessor.Must avoid pings. \n");
+            same_predecessor=1;                
         }    
-        updateLastVisitedIndex();       
-        
-        sendTourPacket();    
-        */
+        else
+        {
+            ping_list_insert( predecessorIPaddress );
+        }    
+
+        if( same_predecessor == 0 )
+        {
+            bzero( &pgaddr, sizeof( pgaddr ) );
+            pgaddr.sin_family = AF_INET;
+            pgaddr.sin_port = htons( 0 );
+
+            inet_pton( AF_INET, predecessorIPaddress,(struct in_addr *) &pgaddr.sin_addr);
+
+            pglen = sizeof(pgaddr);
+
+            HWaddr->sll_ifindex = 1;
+            if_index=retrieveInterfaceIndexFromIP(source_ip_address);
+            HWaddr->sll_hatype = ARPHRD_ETHER;
+            HWaddr->sll_halen = 6;
+
+            areq ((struct sockaddr *)&pgaddr, pglen, HWaddr);
+          
+
+                ihw = IF_HADDR;
+                khw=0;
+                printf("returned  from areq..\n" );
+            
+                do 
+                {  
+                    
+                    printf("%.2x%s", HWaddr->sll_addr[khw] & 0xff, (ihw == 1) ? " " : ":");
+                    khw++;
+                } while (--ihw > 0);
+               
+            printf("returned  from areq..\n" );
+        } 
     } 
     return;   
 }
@@ -829,9 +924,10 @@ void recieveMulticastMessage( int sockfd )
     char own_vm_name[HOSTNAME_LEN];   
     char recvline[MAXLINE];
 
+    memset(recvline,0,MAXLINE);
     if( n = recvfrom(sockfd, recvline, MAXLINE, 0, NULL, NULL) > 0 )
     {
-        recvline[n] = 0;    /* null terminate */
+       // recvline[n] = 0;    /* null terminate */
        
         gethostname( own_vm_name, sizeof(own_vm_name) );
         printf("Node %s .  Recieved: %s.\n",own_vm_name,recvline);
@@ -839,13 +935,16 @@ void recieveMulticastMessage( int sockfd )
     return;
 }
 
-void sendMulticastMessage( int sockfd, char * sendline)
+void sendMulticastMessage( int sockfd, char * sendline )
 {
-    int n;
+    int n,send_result;
     socklen_t maddrlen;
     struct sockaddr_in  maddr;
     char own_vm_name[HOSTNAME_LEN];   
- 
+    char mcast_ip_address[INET_ADDRSTRLEN]; 
+    int mcast_port = 17537;
+    strcpy(mcast_ip_address,"239.108.175.37");
+
     bzero(&maddr, sizeof(maddr));
     maddr.sin_family = AF_INET;
     maddr.sin_port = htons(mcast_port);
@@ -853,9 +952,12 @@ void sendMulticastMessage( int sockfd, char * sendline)
     maddrlen = sizeof(maddr);
 
     gethostname( own_vm_name, sizeof(own_vm_name) );
-    printf("Node %s .  Sending: %s.\n",own_vm_name,sendline);
-    
-    sendto(sockfd, sendline, strlen(sendline), 0, (SA *) &maddr, maddrlen);
+    printf("\n\n\n\n\n\n\n\n\n\nNode %s .  Sending: %s.\n",own_vm_name,sendline);
+    printf("Macst Address : %s\n",mcast_ip_address );
+    printf("Port Number : %d\n",mcast_port );
+
+    send_result = sendto(sockfd, sendline, MAXLINE, 0, (SA *) &maddr, maddrlen);
+    if (send_result == -1){ perror("sendto"); }
     return;
 }
 
@@ -870,7 +972,7 @@ void recieveFirstMulticastMessage(int sockfd)
 {
     char sendbuf[MAXLINE];
     char own_vm_name[HOSTNAME_LEN];   
-    
+    recieveMulticastMessage( sockfd );   
     //       stop pinging activity 
     
     gethostname( own_vm_name, sizeof(own_vm_name) );
@@ -894,15 +996,61 @@ void recieveFirstMulticastMessage(int sockfd)
 void joinMulticastGroup( int mcast_udp_sock, char * mcast_address_string )
 {
     struct sockaddr_in  servaddr, grpaddr, cliaddr;
-
+    int return_value;
+    
     bzero(&grpaddr, sizeof(grpaddr));
     grpaddr.sin_family      = AF_INET;
     grpaddr.sin_addr.s_addr = inet_addr(mcast_address_string);
 
-    mcast_join(mcast_udp_sock, &grpaddr, sizeof(grpaddr), NULL, 0);
-
+    printf("Joining multicast group..\n");
+    printf("Multicast address : %s\n", mcast_address_string);
+    
+    if(return_value = mcast_join(mcast_udp_sock, &grpaddr, sizeof(grpaddr), NULL, 0) == -1 )
+    {
+        printf("Error in joining the multicast group..Exiting..\n");
+        exit(1);
+    }    
+    else
+    {
+        printf("Successfully joined the multicast group..\n");
+    }    
     return;    
 }
+
+int initiateMulticastSending( int sockfd )
+{
+    char sendline[MAXLINE];
+    char own_vm_name[HOSTNAME_LEN];   
+    
+    gethostname( own_vm_name, sizeof(own_vm_name) );
+    
+    sprintf(sendline,"<<<<< This is node %s. Tour has ended. Group members please identify yourselves. >>>>>",own_vm_name);
+
+    sendMulticastMessage(sockfd, sendline);
+    return 1;
+}
+
+int checkIfEndOfTour(char * IPaddress_list, int last_visited_index)
+{
+    char multicast_address[INET_ADDRSTRLEN];
+    char multicast_address_port_both[MAX_PAYLOAD_SIZE];
+    int port_number;
+    retrieveMulticastIpAddress( IPaddress_list , multicast_address, &port_number) ;
+    sprintf( multicast_address_port_both, "%s:%d",multicast_address, port_number );
+
+    if ( strcmp(retrieveNextTourIpAddress(IPaddress_list, last_visited_index), multicast_address_port_both) == 0 )
+    {
+        return 1;
+    }
+    return 0;
+}
+
+void stopPingRoutine()
+{
+    printf("Stopping Ping routine..\n");
+    return;
+}
+
 
 int main(int argc, char const *argv[])
 {
@@ -925,12 +1073,12 @@ int main(int argc, char const *argv[])
      retrieveOwnCanonicalIPAddress( source_ip_address);
     mcast_udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
 
-    bzero(&servaddr, sizeof(servaddr));
-    servaddr.sin_family      = AF_INET;
-    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    servaddr.sin_port        = htons(SERV_PORT);
+  //  bzero(&servaddr, sizeof(servaddr));
+  //  servaddr.sin_family      = AF_INET;
+  //  servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+  //  servaddr.sin_port        = htons(17537);
 
-    bind(mcast_udp_sock, (SA *) &servaddr, sizeof(servaddr));
+//    bind(mcast_udp_sock, (SA *) &servaddr, sizeof(servaddr));
 
     if((packet_socket = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_IP) ) )==-1)
     {
@@ -963,6 +1111,17 @@ int main(int argc, char const *argv[])
     
     if( argc > 1 )
     {    
+        mcast_port = 17537;
+        strcpy( mcast_ip_address, "239.108.175.37");
+        bzero(&servaddr, sizeof(servaddr));
+        servaddr.sin_family      = AF_INET;
+        servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+        servaddr.sin_port        = htons(mcast_port);
+
+        bind(mcast_udp_sock, (SA *) &servaddr, sizeof(servaddr));
+        joinMulticastGroup( mcast_udp_sock, mcast_ip_address );
+
+
         if( createIPTourString(IPaddress_list, argv, IPmulticast_address, port_number) == -1 )
         {
             printf("Error : Same node should not appear consequentively in the tour list..Exiting..\n");
@@ -974,31 +1133,27 @@ int main(int argc, char const *argv[])
         p = createPayload( IPaddress_list );
         retrieveOwnCanonicalIPAddress( source_address );
         retrieveOwnCanonicalIPAddress( source_ip_address);
-        destination_address =  retrieveNextTourIpAddress(IPaddress_list,0);
+        destination_address = retrieveNextTourIpAddress(IPaddress_list,0);
         sendTourPacket( rt_sock, p, destination_address,source_address );
 
     }    
 
-//    exit(0); 
-    printf("starting seleect procedure \n");
-            FD_ZERO(&allset);
-            FD_ZERO(&rset);
-            FD_SET( rt_sock, &allset );
-           FD_SET( pg_sock, &allset );
+    printf("starting select procedure \n");
+    FD_ZERO(&allset);
+    FD_ZERO(&rset);
+    FD_SET( rt_sock, &allset );
+    FD_SET( mcast_udp_sock, &allset );
    // FD_ZERO( &rset );
-    maxfd = max( pg_sock, rt_sock ) +1;
+    maxfd = max( mcast_udp_sock, rt_sock ) +1;
    // maxfd = max( maxfd, pg_sock ) + 1;
 
                 
-printf("pg_sock %d, rt_sock %d\n",pg_sock, rt_sock);
+    printf("pg_sock %d, rt_sock %d, mcast_udp_sock : %d\n",pg_sock, rt_sock,mcast_udp_sock);
     for ( ; ; ) 
     {
-         //   FD_SET( packet_socket, &rset );
             rset = allset;
-            printf("1\n");
             if( ( nready = select( maxfd, &rset, NULL, NULL, NULL ) ) < 0 )
             {
-                   printf("2\n");
                     if( errno == EINTR )
                     {
                             fputs("Encountered EINTR.. retrying..\n", stdout);
@@ -1010,11 +1165,8 @@ printf("pg_sock %d, rt_sock %d\n",pg_sock, rt_sock);
                             exit(1);
                     }
             }       
-               printf("nready: %d\n", nready);
- //           if ( FD_ISSET(packet_socket, &rset)  ) 
-   //         {
-     //          printf("What the crap is this shit doing here ? \n");     
-       //     }
+            printf("nready: %d\n", nready);
+ 
             if( FD_ISSET(rt_sock, &rset) )
             {
                 printf("Recieving packet from rt_sock..\n");
@@ -1022,47 +1174,57 @@ printf("pg_sock %d, rt_sock %d\n",pg_sock, rt_sock);
 
                 HWaddr = (struct HWaddr *)malloc(sizeof(struct hwaddr));
                 recievePacketFromRTSock(rt_sock,mcast_udp_sock,destination_ip_address,HWaddr);
-                memcpy(destination_hw_mac_address,HWaddr->sll_addr,IF_HADDR);
-                pid = IDENTIFIER;  /* ICMP ID field is 16 bits */
-                Signal(SIGALRM, sig_alrm);
-                ai = Host_serv(destination_ip_address, NULL, 0, 0);
-
-                h = Sock_ntop_host(ai->ai_addr, ai->ai_addrlen);
-                    /* 4initialize according to protocol */
-                if (ai->ai_family == AF_INET) 
+                
+                if( same_predecessor == 0 )
                 {
-                    pr = &proto_v4;
+                    memcpy(destination_hw_mac_address,HWaddr->sll_addr,IF_HADDR);
+                    pid = IDENTIFIER;  /* ICMP ID field is 16 bits */
+                    Signal(SIGALRM, sig_alrm);
+                    ai = Host_serv(destination_ip_address, NULL, 0, 0);
 
-                } 
-                else
-                    err_quit("unknown address family %d", ai->ai_family);
+                    h = Sock_ntop_host(ai->ai_addr, ai->ai_addrlen);
+                        /* 4initialize according to protocol */
+                    if (ai->ai_family == AF_INET) 
+                    {
+                        pr = &proto_v4;
 
-                pr->sasend = ai->ai_addr;
-                pr->sarecv = Calloc(1, ai->ai_addrlen);
-                pr->salen = ai->ai_addrlen;
-                pr->icmpproto = IPPROTO_ICMP;
+                    } 
+                    else
+                        err_quit("unknown address family %d", ai->ai_family);
 
-                printf("PING %s (%s): %d data bytes\n",
-                        ai->ai_canonname ? ai->ai_canonname : h,
-                        h, datalen);
+                    pr->sasend = ai->ai_addr;
+                    pr->sarecv = Calloc(1, ai->ai_addrlen);
+                    pr->salen = ai->ai_addrlen;
+                    pr->icmpproto = IPPROTO_ICMP;
 
-                    /* 4initialize according to protocol */
+                    printf("PING %s (%s): %d data bytes\n",
+                            ai->ai_canonname ? ai->ai_canonname : h,
+                            h, datalen);
 
-                readloop();
+                        /* 4initialize according to protocol */
+
+                    //readloop();
+                }    
+                echo_reply_count = 5;
+                 if( (end_of_tour == 1) && (echo_reply_count >= 5)  )
+                 {
+                      initiateMulticastSending(mcast_udp_sock);
+                 }
+     
 
             }   
-            else if( FD_ISSET(pg_sock, &rset) )
-            {
-                printf("Recieving packet from pg_sock..\n");
-                recievePacketFromPGSock(pg_sock);
-            } 
-            /*else if( FD_ISSET(mcast_udp_sock, &rset) )
+//            else if( FD_ISSET(pg_sock, &rset) )
+  //          {
+    //            pr intf("Recieving packet from pg_sock..\n");
+                //recievePacketFromPGSock(pg_sock);
+      //      } 
+            else if( FD_ISSET(mcast_udp_sock, &rset) )
             {
                 printf("Recieving packet from mcast_udp_sock..\n");
                 recieveFirstMulticastMessage(mcast_udp_sock);
                 printf("Terminating the Tour Process..\n");
                 return 1;
-            } */
+            } 
     }
 
     //pinging**************************

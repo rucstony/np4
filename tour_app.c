@@ -299,8 +299,8 @@ char * retrieveNextTourIpAddress( char * IPaddress_list, int last_visited_index 
     strcpy(IP_iterator,IPaddress_list);
     printf("%s\n",IP_iterator );
     p = strtok( IP_iterator,"|" );
-
-    if( last_visited_index == -1 )
+    printf("Last visited index : %d\n",last_visited_index );
+    if( last_visited_index == -1 || last_visited_index == 256 )
     {
         return p;
     }    
@@ -308,9 +308,12 @@ char * retrieveNextTourIpAddress( char * IPaddress_list, int last_visited_index 
     {
 
         printf("%s\n",p );
+        printf("Index : %d\n",i );
         p = strtok( NULL,"|" );         
     }    
-   // printf("Next IP address to be sent to : %s\n", p);
+ 
+    printf("Next IP address to be sent to : %s\n", p);
+ 
     return p;
 }
 
@@ -836,11 +839,15 @@ void recievePacketFromRTSock(int rt_sock, int mcast_udp_sock,char * predecessorI
          memcpy(source_hw_mac_address,retrieveMacFromInterfaceIndex( retrieveInterfaceIndexFromIP(source_ip_address)),6);
         processed_recieved_payload = preprocessPacket(buffer);
         
+        /* UPDATE LAST VISITED INDEX */
+        processed_recieved_payload->last_visited_index += 1;
+        
         if(visited_on_tour_atleast_once == 0)
         {   
             handleMulticastjoining(mcast_udp_sock, processed_recieved_payload);
             visited_on_tour_atleast_once = 1;
         }
+        
 
         if( checkIfEndOfTour( processed_recieved_payload->IPaddress_list, processed_recieved_payload->last_visited_index ) == 1 )
         {
@@ -849,7 +856,7 @@ void recievePacketFromRTSock(int rt_sock, int mcast_udp_sock,char * predecessorI
         }    
         else
         {
-            processed_recieved_payload->last_visited_index += 1;
+            printf("New Updated last_visited_index - %d\n",processed_recieved_payload->last_visited_index );
          
             retrieveOwnCanonicalIPAddress( source_address );
             retrieveOwnCanonicalIPAddress( source_ip_address);
@@ -1013,7 +1020,12 @@ void joinMulticastGroup( int mcast_udp_sock, char * mcast_address_string )
 int initiateMulticastSending( int sockfd )
 {
     char sendline[MAXLINE];
-    strcpy(sendline, "<<<<< This is node vmi .  Tour has ended .  Group members please identify yourselves. >>>>>\n");
+    char own_vm_name[HOSTNAME_LEN];   
+    
+    gethostname( own_vm_name, sizeof(own_vm_name) );
+    
+    sprintf(sendline,"<<<<< This is node %s. Tour has ended. Group members please identify yourselves. >>>>>",own_vm_name);
+
     sendMulticastMessage(sockfd, sendline);
     return 1;
 }
@@ -1021,12 +1033,12 @@ int initiateMulticastSending( int sockfd )
 int checkIfEndOfTour(char * IPaddress_list, int last_visited_index)
 {
     char multicast_address[INET_ADDRSTRLEN];
+    char multicast_address_port_both[MAX_PAYLOAD_SIZE];
     int port_number;
-    printf("IPaddress string : %s\n",IPaddress_list );
-    printf("Last visited index : %d\n",last_visited_index );
     retrieveMulticastIpAddress( IPaddress_list , multicast_address, &port_number) ;
+    sprintf( multicast_address_port_both, "%s:%d",multicast_address, port_number );
 
-    if ( strcmp(retrieveNextTourIpAddress(IPaddress_list, last_visited_index), multicast_address) == 0 )
+    if ( strcmp(retrieveNextTourIpAddress(IPaddress_list, last_visited_index), multicast_address_port_both) == 0 )
     {
         return 1;
     }

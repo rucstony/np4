@@ -1022,12 +1022,11 @@ int checkIfEndOfTour(char * IPaddress_list, int last_visited_index)
 {
     char multicast_address[INET_ADDRSTRLEN];
     int port_number;
-    printf("Here BItches !! wooo \n");
     printf("IPaddress string : %s\n",IPaddress_list );
+    printf("Last visited index : %d\n",last_visited_index );
     retrieveMulticastIpAddress( IPaddress_list , multicast_address, &port_number) ;
 
-    printf("Here BItches !! wooo 1\n");
-    if ( strcmp(retrieveNextTourIpAddress(IPaddress_list, last_visited_index), multicast_address) )
+    if ( strcmp(retrieveNextTourIpAddress(IPaddress_list, last_visited_index), multicast_address) == 0 )
     {
         return 1;
     }
@@ -1143,7 +1142,6 @@ int main(int argc, char const *argv[])
             rset = allset;
             if( ( nready = select( maxfd, &rset, NULL, NULL, NULL ) ) < 0 )
             {
-                   printf("2\n");
                     if( errno == EINTR )
                     {
                             fputs("Encountered EINTR.. retrying..\n", stdout);

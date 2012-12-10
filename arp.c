@@ -330,6 +330,26 @@ void insert_to_cache( char * ip_address,char * hw_address, int if_index, unsigne
  }
 
 /*
+	Print the message store. 
+*/
+void print()
+{
+	struct IP_hw_address_mpg *node; 	
+	printf("LOOKING FOR THE NODE> ::\n ");
+	node = rt_head;
+	while( node != NULL )
+	{
+
+		printf("IP address : %s\n", node->ip_address );
+		node = node->next;
+	}
+	printf("\n***************************\n");
+
+	printf("\n");
+	return;	
+}
+
+/*
 	Routing table lookup.
 */
 struct IP_hw_address_mpg * get_ethernet_from_ip( char * ip_address,char * hw_address, char * if_index, char * hatype, int connfd )
@@ -341,7 +361,7 @@ struct IP_hw_address_mpg * get_ethernet_from_ip( char * ip_address,char * hw_add
 	while( node != NULL )
 	{
 		//printf("searching\n");
-		if( (strcmp( node->ip_address, ip_address ) == 0) && (node->sll_ifindex== if_index ) && (node->sll_hatype== hatype ))
+		if( strcmp( node->ip_address, ip_address ) == 0)
 		{
 			//retrieveHostName( node->destination_canonical_ip_address , h_name);
 		//	printf("obtained %s in cache..\n", ip_address);
@@ -718,13 +738,15 @@ int main(int argc, char const *argv[])
                 	}
  					//memset(entry_from_cache,0,sizeof(struct IP_hw_address_mpg));
  			//		printf("check in cache\n");
+					print();
                 	entry_from_cache=get_ethernet_from_ip(msg_fields[0],NULL,msg_fields[1],msg_fields[2],connfd);
+               		print();
                		//get_ethernet_from_ip( char * ip_address,char * hw_address, char * if_index, char * hatype, int connfd )
 			      //  printf("out of cache\n");
 			        if(entry_from_cache!=NULL && entry_from_cache->hw_address!=NULL)
 			        {
-			  //      	printf("hw address obtained from cache\n");
-			        	writen(connfd,entry_from_cache->hw_address, strlen(entry_from_cache->hw_address));
+			        	printf("hw address obtained from cache\n");
+			        	write(connfd,entry_from_cache->hw_address, strlen(entry_from_cache->hw_address));
 			        	close(connfd);
 			        	/*
 						A cache entry has five parts:
@@ -780,7 +802,7 @@ int main(int argc, char const *argv[])
 	        	}
 	        	else
 	        	{ 
-	        		printf("Recieved Packet successfully\n" ); 
+	        		//printf("Recieved Packet successfully\n" ); 
 	        	}
 
 	            recvd_packet = (struct arp_frame *)processRecievedPacket(buffer);
@@ -923,7 +945,7 @@ int main(int argc, char const *argv[])
 
 
             				if(write(cache->unix_domain_confd,sender_ethernet_address,100)<0)
-            				perror("write");
+            					perror("write");
             				
 
 

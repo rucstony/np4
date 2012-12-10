@@ -92,10 +92,16 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
     if (FD_ISSET(unix_domain_socket, &rset)) 
     { 
     //printf("in areq:readable \n");
-        if((n=read(unix_domain_socket,str_from_sock,MAXLINE))>0)
+        if((n=read(unix_domain_socket,str_from_sock,MAXLINE))>=0)
         {
       //    printf("entering if\n");
             alarm(0);
+
+            if(n == 0 )
+            {
+              close(unix_domain_socket);
+              return 1; 
+            }  
 
            n= sizeof(str_from_sock);
            str_from_sock[n]=0;
@@ -112,9 +118,7 @@ int areq (struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
                 khw++;
             } while (--ihw > 0);
         //   printf("done...\n");
-           close(unix_domain_socket);
-           return 1; 
-
+  
        }else{
         perror("read");
        }

@@ -845,7 +845,7 @@ int main(int argc, char const *argv[])
 							printf("\nDestination IP Address : %s \n" , recvd_packet->target_ip_address);
 				        	
 							printf("\n");
-							printf("hard_type: %hu, proto_type: %hu, hard_size: %hu ,proto_size %hu,op : %hu\n", ntohs(recvd_packet->hard_type), recvd_packet->proto_type, recvd_packet->hard_size,recvd_packet->proto_size,recvd_packet->op);
+							printf("hard_type: %hu, proto_type: %hu, hard_size: %hu ,proto_size %hu,op : %hu\n", recvd_packet->hard_type, recvd_packet->proto_type, recvd_packet->hard_size,recvd_packet->proto_size,recvd_packet->op);
 				        	printf("**************************************************************\n");
 
 
